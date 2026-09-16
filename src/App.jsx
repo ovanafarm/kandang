@@ -778,7 +778,7 @@ export default function OvanaFarmDashboard() {
 
     (async () => {
       try {
-        const [eggResult, feedResult, healthResult, financeResult, s, p] = await Promise.all([
+        const [eggResult, feedResult, healthResult, financeResult, settingResult, p] = await Promise.all([
           supabase
             .from('kandang_telur')
             .select('id, tanggal, grade_a, grade_b, retak')
@@ -795,7 +795,10 @@ export default function OvanaFarmDashboard() {
             .from('kandang_keuangan')
             .select('id, tanggal, jenis, kategori, nominal, catatan')
             .order('tanggal', { ascending: true }),
-          loadSettings(),
+          supabase
+            .from('kandang_setting')
+            .select('nama_farm, jumlah_ayam')
+            .maybeSingle(),
           loadProject(),
         ]);
 
@@ -803,6 +806,7 @@ export default function OvanaFarmDashboard() {
         if (feedResult.error) throw feedResult.error;
         if (healthResult.error) throw healthResult.error;
         if (financeResult.error) throw financeResult.error;
+        if (settingResult.error) throw settingResult.error;
 
         const eggs = (eggResult.data || []).map((r) => ({
           id: r.id,
@@ -838,10 +842,17 @@ export default function OvanaFarmDashboard() {
           notes: r.catatan || '',
         }));
 
+        const farmSettings = settingResult.data
+          ? {
+              farmName: settingResult.data.nama_farm || 'Ovana Farm',
+              flockSize: Number(settingResult.data.jumlah_ayam) || 0,
+            }
+          : { farmName: 'Ovana Farm', flockSize: 0 };
+
         if (!mounted) return;
 
         setData({ eggs, feed, health, finance });
-        setSettings(s);
+        setSettings(farmSettings);
         setProject(p);
       } catch (e) {
         console.error('Gagal memuat data:', e);
@@ -1072,10 +1083,32 @@ export default function OvanaFarmDashboard() {
     }));
   };
 
-  const updateFlockSize = (val) => {
+  const updateFlockSize = async (val) => {
     const next = { ...settings, flockSize: Number(val) || 0 };
     setSettings(next);
-    saveSettings(next);
+
+    const { data: authData, error: authError } = await supabase.auth.getUser();
+    if (authError || !authData?.user) {
+      console.error('Gagal membaca user untuk pengaturan farm:', authError);
+      alert('Gagal menyimpan jumlah ayam. Silakan login ulang.');
+      return;
+    }
+
+    const { error } = await supabase
+      .from('kandang_setting')
+      .upsert(
+        {
+          user_id: authData.user.id,
+          nama_farm: next.farmName || 'Ovana Farm',
+          jumlah_ayam: next.flockSize,
+        },
+        { onConflict: 'user_id' }
+      );
+
+    if (error) {
+      console.error('Gagal menyimpan pengaturan farm:', error);
+      alert('Gagal menyimpan jumlah ayam.');
+    }
   };
 
   const updateProject = (patch) => {
