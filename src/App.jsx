@@ -5,7 +5,8 @@ import {
 } from 'recharts';
 import {
   Egg, Wheat, HeartPulse, Wallet, Plus, Trash2, Loader2, AlertCircle,
-  Droplets, Skull, ArrowUpCircle, ArrowDownCircle, Calculator,
+  Droplets, Skull, ArrowUpCircle, ArrowDownCircle, Calculator, Pencil,
+  CheckCircle2, X, Save,
 } from 'lucide-react';
 
 import { supabase } from './supabase.js';
@@ -218,15 +219,155 @@ function EmptyRow({ text }) {
 function DeleteBtn({ onClick }) {
   return (
     <button
+      type="button"
       onClick={onClick}
       className="rounded-md p-1.5 transition-colors"
       style={{ color: C.rust }}
       onMouseEnter={(e) => (e.currentTarget.style.background = C.rustSoft)}
       onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
       aria-label="Hapus"
+      title="Hapus"
     >
       <Trash2 size={15} />
     </button>
+  );
+}
+
+function EditBtn({ onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="rounded-md p-1.5 transition-colors"
+      style={{ color: C.green }}
+      onMouseEnter={(e) => (e.currentTarget.style.background = C.greenSoft)}
+      onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+      aria-label="Edit"
+      title="Edit"
+    >
+      <Pencil size={15} />
+    </button>
+  );
+}
+
+function ToastNotice({ toast }) {
+  if (!toast) return null;
+  const isError = toast.type === 'error';
+  return (
+    <div
+      className="fixed top-4 right-4 z-[100] max-w-[calc(100vw-2rem)] rounded-xl px-4 py-3 shadow-lg flex items-center gap-2 text-sm font-semibold"
+      style={{
+        background: isError ? C.rust : C.green,
+        color: '#fff',
+        minWidth: 230,
+      }}
+    >
+      {isError ? <AlertCircle size={18} /> : <CheckCircle2 size={18} />}
+      <span>{toast.message}</span>
+    </div>
+  );
+}
+
+function ConfirmDialog({ dialog, onCancel, onConfirm }) {
+  if (!dialog) return null;
+  return (
+    <div className="fixed inset-0 z-[110] flex items-center justify-center p-4" style={{ background: 'rgba(8, 38, 50, 0.45)' }}>
+      <div className="w-full max-w-sm rounded-2xl p-5 shadow-2xl" style={{ background: C.panel }}>
+        <div className="flex items-start gap-3">
+          <div className="rounded-full p-2" style={{ background: C.rustSoft, color: C.rust }}>
+            <Trash2 size={18} />
+          </div>
+          <div className="flex-1">
+            <div style={{ fontFamily: FONT_HEAD, fontSize: 18, fontWeight: 600 }}>Hapus data?</div>
+            <div className="text-sm mt-1" style={{ color: C.inkSoft }}>{dialog.message}</div>
+          </div>
+        </div>
+        <div className="flex justify-end gap-2 mt-5">
+          <button type="button" onClick={onCancel} className="rounded-lg px-4 py-2 text-sm font-semibold" style={{ background: C.panelAlt, color: C.ink }}>
+            Tidak, batal
+          </button>
+          <button type="button" onClick={onConfirm} className="rounded-lg px-4 py-2 text-sm font-semibold" style={{ background: C.rust, color: '#fff' }}>
+            Ya, hapus
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function EditModal({ editor, onChange, onClose, onSave }) {
+  if (!editor) return null;
+  return (
+    <div className="fixed inset-0 z-[105] flex items-center justify-center p-4" style={{ background: 'rgba(8, 38, 50, 0.45)' }}>
+      <div className="w-full max-w-xl max-h-[90vh] overflow-y-auto rounded-2xl p-5 shadow-2xl" style={{ background: C.panel }}>
+        <div className="flex items-center justify-between gap-3 mb-4">
+          <div>
+            <div style={{ fontFamily: FONT_HEAD, fontSize: 20, fontWeight: 600 }}>{editor.title}</div>
+            <div className="text-xs mt-1" style={{ color: C.inkSoft }}>Ubah data lalu klik Simpan perubahan.</div>
+          </div>
+          <button type="button" onClick={onClose} className="rounded-lg p-2" style={{ color: C.inkSoft }} aria-label="Tutup">
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {editor.fields.map((field) => (
+            <Field key={field.key} label={field.label}>
+              {field.type === 'select' ? (
+                <Select
+                  value={editor.values[field.key] ?? ''}
+                  disabled={field.disabled}
+                  onChange={(e) => onChange(field.key, e.target.value)}
+                  style={{ width: '100%' }}
+                >
+                  {(field.options || []).map((opt) => {
+                    const value = typeof opt === 'string' ? opt : opt.value;
+                    const label = typeof opt === 'string' ? opt : opt.label;
+                    return <option key={value} value={value}>{label}</option>;
+                  })}
+                </Select>
+              ) : field.type === 'currency' ? (
+                <CurrencyInput
+                  value={editor.values[field.key] ?? ''}
+                  onChange={(value) => onChange(field.key, value)}
+                  style={{ width: '100%' }}
+                />
+              ) : field.type === 'checkbox' ? (
+                <label className="h-[38px] flex items-center gap-2 text-sm" style={{ color: C.inkSoft }}>
+                  <input
+                    type="checkbox"
+                    checked={Boolean(editor.values[field.key])}
+                    onChange={(e) => onChange(field.key, e.target.checked)}
+                  />
+                  {field.checkboxLabel || field.label}
+                </label>
+              ) : (
+                <TextInput
+                  type={field.type || 'text'}
+                  value={editor.values[field.key] ?? ''}
+                  min={field.min}
+                  max={field.max}
+                  step={field.step}
+                  disabled={field.disabled}
+                  onChange={(e) => onChange(field.key, e.target.value)}
+                  style={{ width: '100%' }}
+                />
+              )}
+            </Field>
+          ))}
+        </div>
+
+        <div className="flex flex-col-reverse sm:flex-row justify-end gap-2 mt-5">
+          <button type="button" onClick={onClose} className="rounded-lg px-4 py-2 text-sm font-semibold" style={{ background: C.panelAlt, color: C.ink }}>
+            Batal
+          </button>
+          <button type="button" onClick={onSave} disabled={editor.saving} className="rounded-lg px-4 py-2 text-sm font-semibold flex items-center justify-center gap-2" style={{ background: C.green, color: '#fff', opacity: editor.saving ? 0.7 : 1 }}>
+            {editor.saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+            Simpan perubahan
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -244,10 +385,12 @@ const chartTooltipStyle = {
   background: C.green, border: 'none', borderRadius: 8, color: '#fff', fontSize: 12,
 };
 
+const FEED_TYPE_OPTIONS = ['Konsentrat', 'Jagung giling', 'Dedak', 'Campuran', 'Lainnya'];
+
 /* ---------------------------------------------------------------
    Tab: Produksi Telur
 ------------------------------------------------------------------*/
-function EggsTab({ salesRecords, onAddSale, onDeleteSale }) {
+function EggsTab({ salesRecords, onAddSale, onDeleteSale, onEditSale }) {
   const [saleForm, setSaleForm] = useState({
     date: todayISO(),
     weightKg: '',
@@ -442,7 +585,10 @@ function EggsTab({ salesRecords, onAddSale, onDeleteSale }) {
                     {r.notes ? ` · ${r.notes}` : ''}
                   </div>
 
-                  <DeleteBtn onClick={() => onDeleteSale(r)} />
+                  <div className="flex items-center gap-1">
+                    <EditBtn onClick={() => onEditSale(r)} />
+                    <DeleteBtn onClick={() => onDeleteSale(r)} />
+                  </div>
                 </div>
               );
             })}
@@ -466,8 +612,11 @@ function FeedTab({
   onDeleteStock,
   onAddSale,
   onDeleteSale,
+  onEdit,
+  onEditStock,
+  onEditSale,
 }) {
-  const FEED_TYPES = ['Konsentrat', 'Jagung giling', 'Dedak', 'Campuran', 'Lainnya'];
+  const FEED_TYPES = FEED_TYPE_OPTIONS;
 
   const [form, setForm] = useState({
     date: todayISO(),
@@ -1017,7 +1166,10 @@ function FeedTab({
                   {r.buyer ? ` · ${r.buyer}` : ''}
                   {r.notes ? ` · ${r.notes}` : ''}
                 </div>
-                <DeleteBtn onClick={() => onDeleteSale(r.id)} />
+                <div className="flex items-center gap-1">
+                  <EditBtn onClick={() => onEditSale(r)} />
+                  <DeleteBtn onClick={() => onDeleteSale(r.id)} />
+                </div>
               </div>
             ))}
           </div>
@@ -1043,7 +1195,10 @@ function FeedTab({
                   {r.purchaseCost > 0 ? ` · ${idr(r.purchaseCost)} (${idr(r.purchaseCost / r.stockKg)}/kg)` : ''}
                   {r.notes ? ` · ${r.notes}` : ''}
                 </div>
-                <DeleteBtn onClick={() => onDeleteStock(r.id)} />
+                <div className="flex items-center gap-1">
+                  <EditBtn onClick={() => onEditStock(r)} />
+                  <DeleteBtn onClick={() => onDeleteStock(r.id)} />
+                </div>
               </div>
             ))}
           </div>
@@ -1069,7 +1224,10 @@ function FeedTab({
                   {r.feedCost > 0 ? ` · biaya ${idr(r.feedCost)} (${idr(r.unitCost)}/kg)` : ''}
                   {r.waterLiter ? ` · ${r.waterLiter} L air` : ''}
                 </div>
-                <DeleteBtn onClick={() => onDelete(r.id)} />
+                <div className="flex items-center gap-1">
+                  <EditBtn onClick={() => onEdit(r)} />
+                  <DeleteBtn onClick={() => onDelete(r.id)} />
+                </div>
               </div>
             ))}
           </div>
@@ -1082,7 +1240,7 @@ function FeedTab({
 /* ---------------------------------------------------------------
    Tab: Kesehatan
 ------------------------------------------------------------------*/
-function HealthTab({ records, onAdd, onDelete }) {
+function HealthTab({ records, onAdd, onDelete, onEdit }) {
   const [form, setForm] = useState({ date: todayISO(), sick: '', death: '', vaccinated: false, notes: '' });
   const sorted = useMemo(() => [...records].sort((a, b) => b.date.localeCompare(a.date)), [records]);
 
@@ -1138,7 +1296,10 @@ function HealthTab({ records, onAdd, onDelete }) {
                   {r.vaccinated ? ' · Divaksin' : ''}
                   {r.notes ? ` · ${r.notes}` : ''}
                 </div>
-                <DeleteBtn onClick={() => onDelete(r.id)} />
+                <div className="flex items-center gap-1">
+                  <EditBtn onClick={() => onEdit(r)} />
+                  <DeleteBtn onClick={() => onDelete(r.id)} />
+                </div>
               </div>
             ))}
           </div>
@@ -1151,7 +1312,7 @@ function HealthTab({ records, onAdd, onDelete }) {
 /* ---------------------------------------------------------------
    Tab: Keuangan
 ------------------------------------------------------------------*/
-function FinanceTab({ records, onAdd, onDelete }) {
+function FinanceTab({ records, onAdd, onDelete, onEdit, lockedIds }) {
   const [form, setForm] = useState({ date: todayISO(), type: 'income', category: 'Penjualan ayam afkir', amount: '', notes: '' });
   const sorted = useMemo(() => [...records].sort((a, b) => b.date.localeCompare(a.date)), [records]);
   const chartData = useMemo(() => {
@@ -1252,7 +1413,16 @@ function FinanceTab({ records, onAdd, onDelete }) {
                   </span>
                   {' · '}{r.category}{r.notes ? ` · ${r.notes}` : ''}
                 </div>
-                <DeleteBtn onClick={() => onDelete(r.id)} />
+                {lockedIds?.has(r.id) ? (
+                  <span className="text-[11px] font-semibold rounded-full px-2 py-1" style={{ background: C.panelAlt, color: C.inkSoft }}>
+                    Otomatis
+                  </span>
+                ) : (
+                  <div className="flex items-center gap-1">
+                    <EditBtn onClick={() => onEdit(r)} />
+                    <DeleteBtn onClick={() => onDelete(r.id)} />
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -1809,6 +1979,55 @@ export default function OvanaFarmDashboard() {
   const [tab, setTab] = useState('eggs');
   const [settings, setSettings] = useState({ flockSize: 0, farmName: 'Ovana Farm', startDate: '' });
   const [data, setData] = useState({ eggs: [], eggSales: [], feed: [], feedStock: [], feedSales: [], health: [], finance: [] });
+  const [toast, setToast] = useState(null);
+  const [confirmDialog, setConfirmDialog] = useState(null);
+  const [editor, setEditor] = useState(null);
+
+
+  const showToast = useCallback((message, type = 'success') => {
+    setToast({ message, type, id: Date.now() });
+  }, []);
+
+  useEffect(() => {
+    if (!toast) return undefined;
+    const timer = setTimeout(() => setToast(null), 2600);
+    return () => clearTimeout(timer);
+  }, [toast]);
+
+  const requestDelete = useCallback((message, action) => {
+    setConfirmDialog({ message, action });
+  }, []);
+
+  const runConfirmedDelete = async () => {
+    const action = confirmDialog?.action;
+    setConfirmDialog(null);
+    if (action) await action();
+  };
+
+  const changeEditorValue = (key, value) => {
+    setEditor((prev) => {
+      if (!prev) return prev;
+      let fields = prev.fields;
+      let values = { ...prev.values, [key]: value };
+      if (prev.title === 'Edit transaksi keuangan' && key === 'type') {
+        const categories = value === 'income'
+          ? ['Penjualan ayam afkir', 'Lainnya']
+          : ['Pembuatan/renovasi kandang', 'Pembelian ayam', 'Peralatan', 'Pakan', 'Obat & vitamin', 'Listrik/air', 'Tenaga kerja', 'Transportasi', 'Perbaikan kandang', 'Lainnya'];
+        fields = prev.fields.map((f) => f.key === 'category' ? { ...f, options: categories } : f);
+        values.category = categories[0];
+      }
+      return { ...prev, fields, values };
+    });
+  };
+
+  const saveEditor = async () => {
+    if (!editor?.onSave || editor.saving) return;
+    const current = editor;
+    setEditor((prev) => prev ? { ...prev, saving: true } : prev);
+    const ok = await current.onSave(current.values);
+    if (ok !== false) setEditor(null);
+    else setEditor((prev) => prev ? { ...prev, saving: false } : prev);
+  };
 
   useEffect(() => {
     let mounted = true;
@@ -2074,6 +2293,7 @@ export default function OvanaFarmDashboard() {
       eggSales: [...prev.eggSales, saleRecord],
       finance: financeRecord ? [...prev.finance, financeRecord] : prev.finance,
     }));
+    showToast('Penjualan telur tersimpan.');
   };
 
   const deleteEggSaleRecord = async (record) => {
@@ -2095,6 +2315,7 @@ export default function OvanaFarmDashboard() {
         ? prev.finance.filter((r) => r.id !== record.financeId)
         : prev.finance,
     }));
+    showToast('Penjualan telur dihapus.');
   };
 
   const addFeedRecord = async (record) => {
@@ -2131,6 +2352,7 @@ export default function OvanaFarmDashboard() {
       ...prev,
       feed: [...prev.feed, newRecord],
     }));
+    showToast('Pemakaian pakan & minum tersimpan.');
   };
 
   const deleteFeedRecord = async (id) => {
@@ -2149,6 +2371,7 @@ export default function OvanaFarmDashboard() {
       ...prev,
       feed: prev.feed.filter((r) => r.id !== id),
     }));
+    showToast('Catatan pemakaian dihapus.');
   };
 
   const addFeedStockRecord = async (record) => {
@@ -2198,6 +2421,7 @@ export default function OvanaFarmDashboard() {
       feedStock: [...prev.feedStock, newStock],
       finance: newFinance ? [...prev.finance, newFinance] : prev.finance,
     }));
+    showToast('Stok pakan tersimpan dan pengeluaran tercatat.');
   };
 
   const deleteFeedStockRecord = async (id) => {
@@ -2217,6 +2441,7 @@ export default function OvanaFarmDashboard() {
       feedStock: prev.feedStock.filter((r) => r.id !== id),
       finance: prev.finance.filter((r) => r.refStockId !== id),
     }));
+    showToast('Stok pakan dihapus.');
   };
 
 
@@ -2270,6 +2495,7 @@ export default function OvanaFarmDashboard() {
       feedSales: [...prev.feedSales, newSale],
       finance: newFinance ? [...prev.finance, newFinance] : prev.finance,
     }));
+    showToast('Penjualan pakan tersimpan. Stok dan saldo diperbarui.');
   };
 
   const deleteFeedSaleRecord = async (id) => {
@@ -2292,6 +2518,7 @@ export default function OvanaFarmDashboard() {
         ? prev.finance.filter((r) => r.id !== sale.financeId)
         : prev.finance,
     }));
+    showToast('Penjualan pakan dihapus. Stok dan saldo diperbarui.');
   };
 
 
@@ -2327,6 +2554,7 @@ export default function OvanaFarmDashboard() {
       ...prev,
       health: [...prev.health, newRecord],
     }));
+    showToast('Catatan kesehatan tersimpan.');
   };
 
   const deleteHealthRecord = async (id) => {
@@ -2345,6 +2573,7 @@ export default function OvanaFarmDashboard() {
       ...prev,
       health: prev.health.filter((r) => r.id !== id),
     }));
+    showToast('Catatan kesehatan dihapus.');
   };
 
   const addFinanceRecord = async (record) => {
@@ -2379,6 +2608,7 @@ export default function OvanaFarmDashboard() {
       ...prev,
       finance: [...prev.finance, newRecord],
     }));
+    showToast('Transaksi keuangan tersimpan.');
   };
 
   const deleteFinanceRecord = async (id) => {
@@ -2397,7 +2627,310 @@ export default function OvanaFarmDashboard() {
       ...prev,
       finance: prev.finance.filter((r) => r.id !== id),
     }));
+    showToast('Transaksi keuangan dihapus.');
   };
+
+
+  const updateEggSaleRecord = async (record) => {
+    const { error } = await supabase
+      .from('kandang_penjualan_telur')
+      .update({
+        tanggal: record.date,
+        berat_kg: record.weightKg,
+        nominal: record.amount,
+        pembeli: record.buyer || null,
+        catatan: record.notes || null,
+      })
+      .eq('id', record.id);
+
+    if (error) {
+      console.error('Gagal mengubah penjualan telur:', error);
+      alert('Gagal mengubah penjualan telur.');
+      return false;
+    }
+
+    setData((prev) => ({
+      ...prev,
+      eggSales: prev.eggSales.map((r) => r.id === record.id ? { ...r, ...record } : r),
+      finance: prev.finance.map((r) => r.id === record.financeId
+        ? {
+            ...r,
+            date: record.date,
+            amount: Number(record.amount),
+            notes: `Otomatis dari penjualan telur: ${record.weightKg} kg${record.buyer ? ` · ${record.buyer}` : ''}${record.notes ? ` · ${record.notes}` : ''}`,
+          }
+        : r),
+    }));
+    showToast('Penjualan telur berhasil diperbarui.');
+    return true;
+  };
+
+  const updateFeedRecord = async (record) => {
+    const { data: inserted, error } = await supabase
+      .from('kandang_pakan')
+      .update({
+        tanggal: record.date,
+        jenis_pakan: record.feedType,
+        pakan_kg: record.feedKg,
+        air_liter: record.waterLiter,
+        harga_per_kg: record.unitCost,
+        biaya_pakan: record.feedCost,
+      })
+      .eq('id', record.id)
+      .select('id, tanggal, jenis_pakan, pakan_kg, air_liter, harga_per_kg, biaya_pakan')
+      .single();
+
+    if (error) {
+      console.error('Gagal mengubah pemakaian pakan:', error);
+      alert('Gagal mengubah pemakaian pakan.');
+      return false;
+    }
+
+    const updated = {
+      id: inserted.id,
+      date: inserted.tanggal,
+      feedType: inserted.jenis_pakan,
+      feedKg: Number(inserted.pakan_kg),
+      waterLiter: Number(inserted.air_liter),
+      unitCost: Number(inserted.harga_per_kg) || 0,
+      feedCost: Number(inserted.biaya_pakan) || 0,
+    };
+
+    setData((prev) => ({ ...prev, feed: prev.feed.map((r) => r.id === record.id ? updated : r) }));
+    showToast('Pemakaian pakan & minum berhasil diperbarui.');
+    return true;
+  };
+
+  const updateFeedStockRecord = async (record) => {
+    const { error } = await supabase
+      .from('kandang_stok_pakan')
+      .update({
+        tanggal: record.date,
+        jumlah_kg: record.stockKg,
+        harga_total: record.purchaseCost,
+        catatan: record.notes || null,
+      })
+      .eq('id', record.id);
+
+    if (error) {
+      console.error('Gagal mengubah stok pakan:', error);
+      alert('Gagal mengubah stok pakan.');
+      return false;
+    }
+
+    const financeNotes = `Otomatis dari stok pakan: ${record.feedType} ${record.stockKg} kg${record.notes ? ` · ${record.notes}` : ''}`;
+    setData((prev) => ({
+      ...prev,
+      feedStock: prev.feedStock.map((r) => r.id === record.id ? { ...r, ...record } : r),
+      finance: prev.finance.map((r) => r.refStockId === record.id
+        ? { ...r, date: record.date, amount: Number(record.purchaseCost), notes: financeNotes }
+        : r),
+    }));
+    showToast('Stok pakan berhasil diperbarui.');
+    return true;
+  };
+
+  const updateFeedSaleRecord = async (record) => {
+    const { data: result, error } = await supabase
+      .rpc('kandang_edit_penjualan_pakan', {
+        p_sale_id: record.id,
+        p_tanggal: record.date,
+        p_jumlah_kg: record.saleKg,
+        p_harga_jual_per_kg: record.pricePerKg,
+        p_pembeli: record.buyer || null,
+        p_catatan: record.notes || null,
+      })
+      .single();
+
+    if (error) {
+      console.error('Gagal mengubah penjualan pakan:', error);
+      alert(error.message || 'Gagal mengubah penjualan pakan.');
+      return false;
+    }
+
+    const updated = {
+      ...record,
+      amount: Number(result.nominal) || 0,
+      costPerKg: Number(result.harga_pokok_per_kg) || 0,
+      costTotal: Number(result.harga_pokok_total) || 0,
+      margin: Number(result.laba_estimasi) || 0,
+      financeId: result.finance_id || record.financeId,
+    };
+
+    setData((prev) => ({
+      ...prev,
+      feedSales: prev.feedSales.map((r) => r.id === record.id ? updated : r),
+      finance: prev.finance.map((r) => r.id === updated.financeId
+        ? {
+            ...r,
+            date: record.date,
+            amount: Number(updated.amount),
+            notes: `Otomatis dari penjualan pakan: ${record.feedType} ${record.saleKg} kg`,
+          }
+        : r),
+    }));
+    showToast('Penjualan pakan berhasil diperbarui.');
+    return true;
+  };
+
+  const updateHealthRecord = async (record) => {
+    const { error } = await supabase
+      .from('kandang_kesehatan')
+      .update({
+        tanggal: record.date,
+        sakit: record.sick,
+        mati: record.death,
+        vaksinasi: record.vaccinated,
+        catatan: record.notes || null,
+      })
+      .eq('id', record.id);
+
+    if (error) {
+      console.error('Gagal mengubah kesehatan:', error);
+      alert('Gagal mengubah catatan kesehatan.');
+      return false;
+    }
+
+    setData((prev) => ({ ...prev, health: prev.health.map((r) => r.id === record.id ? { ...r, ...record } : r) }));
+    showToast('Catatan kesehatan berhasil diperbarui.');
+    return true;
+  };
+
+  const updateFinanceRecord = async (record) => {
+    const { error } = await supabase
+      .from('kandang_keuangan')
+      .update({
+        tanggal: record.date,
+        jenis: record.type,
+        kategori: record.category,
+        nominal: record.amount,
+        catatan: record.notes || null,
+      })
+      .eq('id', record.id);
+
+    if (error) {
+      console.error('Gagal mengubah keuangan:', error);
+      alert('Gagal mengubah transaksi keuangan.');
+      return false;
+    }
+
+    setData((prev) => ({ ...prev, finance: prev.finance.map((r) => r.id === record.id ? { ...r, ...record } : r) }));
+    showToast('Transaksi keuangan berhasil diperbarui.');
+    return true;
+  };
+
+  const openEggSaleEditor = (record) => setEditor({
+    title: 'Edit penjualan telur',
+    fields: [
+      { key: 'date', label: 'Tanggal jual', type: 'date', max: todayISO() },
+      { key: 'weightKg', label: 'Qty terjual (kg)', type: 'number', min: 0.01, step: 0.01 },
+      { key: 'amount', label: 'Total penjualan', type: 'currency' },
+      { key: 'buyer', label: 'Pembeli (opsional)', type: 'text' },
+      { key: 'notes', label: 'Catatan (opsional)', type: 'text' },
+    ],
+    values: { date: record.date, weightKg: record.weightKg, amount: record.amount, buyer: record.buyer || '', notes: record.notes || '' },
+    onSave: (v) => updateEggSaleRecord({ ...record, date: v.date, weightKg: Number(v.weightKg) || 0, amount: Number(v.amount) || 0, buyer: String(v.buyer || '').trim(), notes: String(v.notes || '').trim() }),
+  });
+
+  const openFeedUsageEditor = (record) => setEditor({
+    title: 'Edit pemakaian pakan & minum',
+    fields: [
+      { key: 'date', label: 'Tanggal', type: 'date', max: todayISO() },
+      { key: 'feedType', label: 'Jenis pakan', type: 'select', options: FEED_TYPE_OPTIONS },
+      { key: 'feedKg', label: 'Pakan (kg)', type: 'number', min: 0, step: 0.1 },
+      { key: 'waterLiter', label: 'Air minum (liter)', type: 'number', min: 0, step: 0.1 },
+    ],
+    values: { date: record.date, feedType: record.feedType, feedKg: record.feedKg, waterLiter: record.waterLiter },
+    onSave: (v) => {
+      const currentStock = data.feedStock.filter((x) => x.feedType === v.feedType).reduce((s, x) => s + Number(x.stockKg || 0), 0);
+      const usedOther = data.feed.filter((x) => x.id !== record.id && x.feedType === v.feedType).reduce((s, x) => s + Number(x.feedKg || 0), 0);
+      const sold = data.feedSales.filter((x) => x.feedType === v.feedType).reduce((s, x) => s + Number(x.saleKg || 0), 0);
+      const incomingCost = data.feedStock.filter((x) => x.feedType === v.feedType).reduce((s, x) => s + Number(x.purchaseCost || 0), 0);
+      const otherUsedCost = data.feed.filter((x) => x.id !== record.id && x.feedType === v.feedType).reduce((s, x) => s + Number(x.feedCost || 0), 0);
+      const soldCost = data.feedSales.filter((x) => x.feedType === v.feedType).reduce((s, x) => s + Number(x.costTotal || 0), 0);
+      const availableKg = currentStock - usedOther - sold;
+      const availableValue = Math.max(0, incomingCost - otherUsedCost - soldCost);
+      const unitCost = availableKg > 0 ? availableValue / availableKg : 0;
+      const feedKg = Number(v.feedKg) || 0;
+      if (feedKg > availableKg + 0.0001) {
+        alert(`Stok ${v.feedType} tidak cukup. Tersedia sekitar ${availableKg.toLocaleString('id-ID', { maximumFractionDigits: 2 })} kg.`);
+        return false;
+      }
+      return updateFeedRecord({ ...record, date: v.date, feedType: v.feedType, feedKg, waterLiter: Number(v.waterLiter) || 0, unitCost, feedCost: feedKg * unitCost });
+    },
+  });
+
+  const openFeedStockEditor = (record) => setEditor({
+    title: 'Edit stok masuk pakan',
+    fields: [
+      { key: 'date', label: 'Tanggal masuk', type: 'date', max: todayISO() },
+      { key: 'feedType', label: 'Jenis pakan', type: 'select', options: FEED_TYPE_OPTIONS, disabled: true },
+      { key: 'stockKg', label: 'Stok masuk (kg)', type: 'number', min: 0.01, step: 0.1 },
+      { key: 'purchaseCost', label: 'Harga pembelian total', type: 'currency' },
+      { key: 'notes', label: 'Catatan', type: 'text' },
+    ],
+    values: { date: record.date, feedType: record.feedType, stockKg: record.stockKg, purchaseCost: record.purchaseCost, notes: record.notes || '' },
+    onSave: (v) => {
+      const stockKg = Number(v.stockKg) || 0;
+      const purchaseCost = Number(v.purchaseCost) || 0;
+      const otherIncoming = data.feedStock.filter((x) => x.id !== record.id && x.feedType === record.feedType).reduce((s, x) => s + Number(x.stockKg || 0), 0);
+      const used = data.feed.filter((x) => x.feedType === record.feedType).reduce((s, x) => s + Number(x.feedKg || 0), 0);
+      const sold = data.feedSales.filter((x) => x.feedType === record.feedType).reduce((s, x) => s + Number(x.saleKg || 0), 0);
+      if (otherIncoming + stockKg < used + sold - 0.0001) {
+        alert(`Jumlah stok baru terlalu kecil. Minimal sekitar ${(used + sold - otherIncoming).toLocaleString('id-ID', { maximumFractionDigits: 2 })} kg agar riwayat pemakaian/penjualan tetap valid.`);
+        return false;
+      }
+      if (stockKg <= 0 || purchaseCost <= 0) return false;
+      return updateFeedStockRecord({ ...record, date: v.date, stockKg, purchaseCost, notes: String(v.notes || '').trim() });
+    },
+  });
+
+  const openFeedSaleEditor = (record) => setEditor({
+    title: 'Edit penjualan pakan',
+    fields: [
+      { key: 'date', label: 'Tanggal jual', type: 'date', max: todayISO() },
+      { key: 'feedType', label: 'Jenis pakan', type: 'select', options: FEED_TYPE_OPTIONS, disabled: true },
+      { key: 'saleKg', label: 'Qty terjual (kg)', type: 'number', min: 0.01, step: 0.01 },
+      { key: 'pricePerKg', label: 'Harga jual / kg', type: 'currency' },
+      { key: 'buyer', label: 'Pembeli (opsional)', type: 'text' },
+      { key: 'notes', label: 'Catatan', type: 'text' },
+    ],
+    values: { date: record.date, feedType: record.feedType, saleKg: record.saleKg, pricePerKg: record.pricePerKg, buyer: record.buyer || '', notes: record.notes || '' },
+    onSave: (v) => updateFeedSaleRecord({ ...record, date: v.date, saleKg: Number(v.saleKg) || 0, pricePerKg: Number(v.pricePerKg) || 0, buyer: String(v.buyer || '').trim(), notes: String(v.notes || '').trim() }),
+  });
+
+  const openHealthEditor = (record) => setEditor({
+    title: 'Edit catatan kesehatan',
+    fields: [
+      { key: 'date', label: 'Tanggal', type: 'date', max: todayISO() },
+      { key: 'sick', label: 'Ayam sakit (ekor)', type: 'number', min: 0, step: 1 },
+      { key: 'death', label: 'Kematian (ekor)', type: 'number', min: 0, step: 1 },
+      { key: 'vaccinated', label: 'Vaksinasi', type: 'checkbox', checkboxLabel: 'Vaksinasi dilakukan' },
+      { key: 'notes', label: 'Catatan', type: 'text' },
+    ],
+    values: { date: record.date, sick: record.sick, death: record.death, vaccinated: record.vaccinated, notes: record.notes || '' },
+    onSave: (v) => updateHealthRecord({ ...record, date: v.date, sick: Number(v.sick) || 0, death: Number(v.death) || 0, vaccinated: Boolean(v.vaccinated), notes: String(v.notes || '').trim() }),
+  });
+
+  const incomeEditCategories = ['Penjualan ayam afkir', 'Lainnya'];
+  const expenseEditCategories = ['Pembuatan/renovasi kandang', 'Pembelian ayam', 'Peralatan', 'Pakan', 'Obat & vitamin', 'Listrik/air', 'Tenaga kerja', 'Transportasi', 'Perbaikan kandang', 'Lainnya'];
+
+  const openFinanceEditor = (record) => setEditor({
+    title: 'Edit transaksi keuangan',
+    fields: [
+      { key: 'date', label: 'Tanggal', type: 'date', max: todayISO() },
+      { key: 'type', label: 'Jenis', type: 'select', options: [{ value: 'income', label: 'Pemasukan' }, { value: 'expense', label: 'Pengeluaran' }] },
+      { key: 'category', label: 'Kategori', type: 'select', options: record.type === 'income' ? incomeEditCategories : expenseEditCategories },
+      { key: 'amount', label: 'Jumlah', type: 'currency' },
+      { key: 'notes', label: 'Catatan', type: 'text' },
+    ],
+    values: { date: record.date, type: record.type, category: record.category, amount: record.amount, notes: record.notes || '' },
+    onSave: (v) => {
+      const validCategories = v.type === 'income' ? incomeEditCategories : expenseEditCategories;
+      const category = validCategories.includes(v.category) ? v.category : validCategories[0];
+      return updateFinanceRecord({ ...record, date: v.date, type: v.type, category, amount: Number(v.amount) || 0, notes: String(v.notes || '').trim() });
+    },
+  });
 
   const updateFarmSettings = async (patch) => {
     const next = { ...settings, ...patch };
@@ -2462,6 +2995,15 @@ export default function OvanaFarmDashboard() {
     };
   }, [data]);
 
+
+  const autoFinanceIds = useMemo(() => {
+    const ids = new Set();
+    data.eggSales.forEach((r) => { if (r.financeId) ids.add(r.financeId); });
+    data.feedSales.forEach((r) => { if (r.financeId) ids.add(r.financeId); });
+    data.finance.forEach((r) => { if (r.refStockId) ids.add(r.id); });
+    return ids;
+  }, [data.eggSales, data.feedSales, data.finance]);
+
   if (loading) {
     return (
       <div className="w-full h-full min-h-[400px] flex items-center justify-center" style={{ background: C.bg }}>
@@ -2474,6 +3016,18 @@ export default function OvanaFarmDashboard() {
 
   return (
     <div className="w-full min-h-screen" style={{ background: C.bg, fontFamily: FONT_BODY, color: C.ink }}>
+      <ToastNotice toast={toast} />
+      <ConfirmDialog
+        dialog={confirmDialog}
+        onCancel={() => setConfirmDialog(null)}
+        onConfirm={runConfirmedDelete}
+      />
+      <EditModal
+        editor={editor}
+        onChange={changeEditorValue}
+        onClose={() => setEditor(null)}
+        onSave={saveEditor}
+      />
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Nunito:wght@400;600;700;800&display=swap');
         * { box-sizing: border-box; }
@@ -2597,7 +3151,11 @@ export default function OvanaFarmDashboard() {
           <EggsTab
             salesRecords={data.eggSales}
             onAddSale={addEggSaleRecord}
-            onDeleteSale={deleteEggSaleRecord}
+            onEditSale={openEggSaleEditor}
+            onDeleteSale={(record) => requestDelete(
+              `Penjualan telur ${fmtDate(record.date)} sebesar ${idr(record.amount)} akan dihapus. Lanjutkan?`,
+              () => deleteEggSaleRecord(record)
+            )}
           />
         )}
         {tab === 'feed' && (
@@ -2606,25 +3164,31 @@ export default function OvanaFarmDashboard() {
             stockRecords={data.feedStock}
             saleRecords={data.feedSales}
             onAdd={addFeedRecord}
-            onDelete={deleteFeedRecord}
+            onEdit={openFeedUsageEditor}
+            onDelete={(id) => requestDelete('Catatan pemakaian pakan/minum ini akan dihapus. Lanjutkan?', () => deleteFeedRecord(id))}
             onAddStock={addFeedStockRecord}
-            onDeleteStock={deleteFeedStockRecord}
+            onEditStock={openFeedStockEditor}
+            onDeleteStock={(id) => requestDelete('Stok masuk ini akan dihapus dan transaksi pengeluaran terkait juga ikut terhapus. Lanjutkan?', () => deleteFeedStockRecord(id))}
             onAddSale={addFeedSaleRecord}
-            onDeleteSale={deleteFeedSaleRecord}
+            onEditSale={openFeedSaleEditor}
+            onDeleteSale={(id) => requestDelete('Penjualan pakan ini akan dihapus. Stok akan dikembalikan dan pemasukan terkait juga dihapus. Lanjutkan?', () => deleteFeedSaleRecord(id))}
           />
         )}
         {tab === 'health' && (
           <HealthTab
             records={data.health}
             onAdd={addHealthRecord}
-            onDelete={deleteHealthRecord}
+            onEdit={openHealthEditor}
+            onDelete={(id) => requestDelete('Catatan kesehatan ini akan dihapus. Lanjutkan?', () => deleteHealthRecord(id))}
           />
         )}
         {tab === 'finance' && (
           <FinanceTab
             records={data.finance}
+            lockedIds={autoFinanceIds}
             onAdd={addFinanceRecord}
-            onDelete={deleteFinanceRecord}
+            onEdit={openFinanceEditor}
+            onDelete={(id) => requestDelete('Transaksi keuangan ini akan dihapus. Lanjutkan?', () => deleteFinanceRecord(id))}
           />
         )}
         {tab === 'project' && (
@@ -2634,4 +3198,3 @@ export default function OvanaFarmDashboard() {
     </div>
   );
 }
-
