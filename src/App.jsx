@@ -778,12 +778,15 @@ export default function OvanaFarmDashboard() {
 
     (async () => {
       try {
-        const [eggResult, feed, health, finance, s, p] = await Promise.all([
+        const [eggResult, feedResult, health, finance, s, p] = await Promise.all([
           supabase
             .from('kandang_telur')
             .select('id, tanggal, grade_a, grade_b, retak')
             .order('tanggal', { ascending: true }),
-          loadList(STORAGE_KEYS.feed),
+          supabase
+            .from('kandang_pakan')
+            .select('id, tanggal, jenis_pakan, pakan_kg, air_liter')
+            .order('tanggal', { ascending: true }),
           loadList(STORAGE_KEYS.health),
           loadList(STORAGE_KEYS.finance),
           loadSettings(),
@@ -791,6 +794,7 @@ export default function OvanaFarmDashboard() {
         ]);
 
         if (eggResult.error) throw eggResult.error;
+        if (feedResult.error) throw feedResult.error;
 
         const eggs = (eggResult.data || []).map((r) => ({
           id: r.id,
@@ -798,6 +802,14 @@ export default function OvanaFarmDashboard() {
           gradeA: r.grade_a,
           gradeB: r.grade_b,
           broken: r.retak,
+        }));
+
+        const feed = (feedResult.data || []).map((r) => ({
+          id: r.id,
+          date: r.tanggal,
+          feedType: r.jenis_pakan,
+          feedKg: Number(r.pakan_kg),
+          waterLiter: Number(r.air_liter),
         }));
 
         if (!mounted) return;
@@ -876,6 +888,56 @@ export default function OvanaFarmDashboard() {
     setData((prev) => ({
       ...prev,
       eggs: prev.eggs.filter((r) => r.id !== id),
+    }));
+  };
+
+  const addFeedRecord = async (record) => {
+    const { data: inserted, error } = await supabase
+      .from('kandang_pakan')
+      .insert({
+        tanggal: record.date,
+        jenis_pakan: record.feedType,
+        pakan_kg: record.feedKg,
+        air_liter: record.waterLiter,
+      })
+      .select('id, tanggal, jenis_pakan, pakan_kg, air_liter')
+      .single();
+
+    if (error) {
+      console.error('Gagal menyimpan pakan:', error);
+      alert('Gagal menyimpan data pakan.');
+      return;
+    }
+
+    const newRecord = {
+      id: inserted.id,
+      date: inserted.tanggal,
+      feedType: inserted.jenis_pakan,
+      feedKg: Number(inserted.pakan_kg),
+      waterLiter: Number(inserted.air_liter),
+    };
+
+    setData((prev) => ({
+      ...prev,
+      feed: [...prev.feed, newRecord],
+    }));
+  };
+
+  const deleteFeedRecord = async (id) => {
+    const { error } = await supabase
+      .from('kandang_pakan')
+      .delete()
+      .eq('id', id);
+
+    if (error) {
+      console.error('Gagal menghapus pakan:', error);
+      alert('Gagal menghapus data pakan.');
+      return;
+    }
+
+    setData((prev) => ({
+      ...prev,
+      feed: prev.feed.filter((r) => r.id !== id),
     }));
   };
 
@@ -1006,7 +1068,11 @@ export default function OvanaFarmDashboard() {
           />
         )}
         {tab === 'feed' && (
-          <FeedTab records={data.feed} onAdd={addRecord('feed')} onDelete={deleteRecord('feed')} />
+          <FeedTab
+            records={data.feed}
+            onAdd={addFeedRecord}
+            onDelete={deleteFeedRecord}
+          />
         )}
         {tab === 'health' && (
           <HealthTab records={data.health} onAdd={addRecord('health')} onDelete={deleteRecord('health')} />
