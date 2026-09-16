@@ -59,7 +59,18 @@ const isThisMonth = (iso) => {
   const n = new Date();
   return d.getMonth() === n.getMonth() && d.getFullYear() === n.getFullYear();
 };
-const idr = (n) => 'Rp ' + Number(n || 0).toLocaleString('id-ID');
+const idr = (n) => {
+  const value = Number(n || 0);
+  return 'Rp ' + Math.round(Number.isFinite(value) ? value : 0).toLocaleString('id-ID');
+};
+
+const digitsOnly = (value) => String(value ?? '').replace(/\D/g, '');
+
+const formatRupiahInput = (value) => {
+  const digits = digitsOnly(value);
+  if (!digits) return '';
+  return `Rp ${Number(digits).toLocaleString('id-ID')}`;
+};
 
 async function loadList(key) {
   try {
@@ -150,6 +161,25 @@ const inputStyle = {
 function TextInput(props) {
   return <input {...props} style={{ ...inputStyle, ...(props.style || {}) }} />;
 }
+
+function CurrencyInput({ value, onChange, style, placeholder = 'Rp 0', ...props }) {
+  return (
+    <input
+      {...props}
+      type="text"
+      inputMode="numeric"
+      autoComplete="off"
+      placeholder={placeholder}
+      value={formatRupiahInput(value)}
+      onChange={(e) => {
+        const raw = digitsOnly(e.target.value);
+        onChange?.(raw);
+      }}
+      style={{ ...inputStyle, ...(style || {}) }}
+    />
+  );
+}
+
 function Select(props) {
   return <select {...props} style={{ ...inputStyle, ...(props.style || {}) }} />;
 }
@@ -334,15 +364,12 @@ function EggsTab({ salesRecords, onAddSale, onDeleteSale }) {
             />
           </Field>
 
-          <Field label="Total penjualan (Rp)">
-            <TextInput
-              type="number"
-              min="1"
-              step="1"
-              placeholder="mis. 50000"
+          <Field label="Total penjualan">
+            <CurrencyInput
               value={saleForm.amount}
-              onChange={(e) => setSaleForm({ ...saleForm, amount: e.target.value })}
-              style={{ width: 170 }}
+              onChange={(value) => setSaleForm({ ...saleForm, amount: value })}
+              placeholder="Rp 0"
+              style={{ width: 180 }}
             />
           </Field>
 
@@ -690,21 +717,18 @@ function FeedTab({
             />
           </Field>
 
-          <Field label="Harga pembelian total (Rp)">
-            <TextInput
-              type="number"
-              min="0"
-              step="1"
-              placeholder="0"
+          <Field label="Harga pembelian total">
+            <CurrencyInput
               value={stockForm.purchaseCost}
-              onChange={(e) => setStockForm({ ...stockForm, purchaseCost: e.target.value })}
-              style={{ width: 180 }}
+              onChange={(value) => setStockForm({ ...stockForm, purchaseCost: value })}
+              placeholder="Rp 0"
+              style={{ width: 190 }}
             />
           </Field>
 
           {Number(stockForm.stockKg) > 0 && Number(stockForm.purchaseCost) > 0 && (
             <div className="text-xs pb-2" style={{ color: C.inkSoft }}>
-              ≈ <b>{idr(Number(stockForm.purchaseCost) / Number(stockForm.stockKg))} / kg</b>
+              Harga rata-rata ≈ <b>{idr(Number(stockForm.purchaseCost) / Number(stockForm.stockKg))}/kg</b>
             </div>
           )}
 
@@ -988,9 +1012,13 @@ function FinanceTab({ records, onAdd, onDelete }) {
               ))}
             </Select>
           </Field>
-          <Field label="Jumlah (Rp)">
-            <TextInput type="number" min="0" placeholder="0" value={form.amount}
-              onChange={(e) => setForm({ ...form, amount: e.target.value })} style={{ width: 140 }} />
+          <Field label="Jumlah">
+            <CurrencyInput
+              value={form.amount}
+              onChange={(value) => setForm({ ...form, amount: value })}
+              placeholder="Rp 0"
+              style={{ width: 170 }}
+            />
           </Field>
           <Field label="Catatan (opsional)">
             <TextInput type="text" placeholder="mis. toko, pembelian" value={form.notes}
