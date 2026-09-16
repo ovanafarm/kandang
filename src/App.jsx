@@ -157,7 +157,7 @@ function Select(props) {
 function KpiCard({ icon: Icon, label, value, sub, accent }) {
   return (
     <div
-      className="flex-1 min-w-[150px] rounded-xl p-4 flex flex-col gap-2"
+      className="w-full min-w-0 rounded-xl p-3 sm:p-4 flex flex-col gap-2"
       style={{ background: C.panel, border: `1px solid ${C.border}` }}
     >
       <div className="flex items-center gap-2">
@@ -202,7 +202,7 @@ function DeleteBtn({ onClick }) {
 
 function SectionCard({ title, description, children }) {
   return (
-    <div className="rounded-xl p-5" style={{ background: C.panel, border: `1px solid ${C.border}` }}>
+    <div className="rounded-xl p-4 sm:p-5 lg:p-6" style={{ background: C.panel, border: `1px solid ${C.border}` }}>
       <div style={{ fontFamily: FONT_HEAD, fontSize: 18, fontWeight: 600, color: C.ink }}>{title}</div>
       {description && <div className="text-xs mt-1 mb-4" style={{ color: C.inkSoft }}>{description}</div>}
       <div className={description ? '' : 'mt-4'}>{children}</div>
@@ -1020,7 +1020,7 @@ function ProjectTab({ finance, settings }) {
         title="Proyeksi usaha & BEP"
         description="Dihitung otomatis dari seluruh pemasukan dan pengeluaran sejak tanggal mulai usaha. Pengeluaran modal satu kali dipisahkan dari biaya operasional agar estimasi BEP tidak bias."
       >
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
           {[
             ['Mulai usaha', prettyDate(startDate)],
             ['Hari berjalan', `${daysRunning} hari`],
@@ -1035,7 +1035,7 @@ function ProjectTab({ finance, settings }) {
         </div>
       </SectionCard>
 
-      <div className="flex flex-wrap gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
         <KpiCard icon={ArrowUpCircle} label="Pemasukan sejak awal" value={idr(totalIncome)} accent={C.sage} />
         <KpiCard icon={ArrowDownCircle} label="Pengeluaran sejak awal" value={idr(totalExpense)} accent={C.rust} />
         <KpiCard icon={Wallet} label="Laba/rugi kas saat ini" value={idr(currentNet)}
@@ -1551,7 +1551,17 @@ export default function OvanaFarmDashboard() {
     <div className="w-full min-h-screen" style={{ background: C.bg, fontFamily: FONT_BODY, color: C.ink }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Nunito:wght@400;600;700;800&display=swap');
+        * { box-sizing: border-box; }
         input[type="date"]::-webkit-calendar-picker-indicator { opacity: 0.6; }
+        .ovana-tabs { scrollbar-width: none; }
+        .ovana-tabs::-webkit-scrollbar { display: none; }
+        @media (max-width: 639px) {
+          .ovana-mobile-full form { display: grid !important; grid-template-columns: 1fr !important; }
+          .ovana-mobile-full form > * { width: 100% !important; min-width: 0 !important; }
+          .ovana-mobile-full form input,
+          .ovana-mobile-full form select { width: 100% !important; min-width: 0 !important; }
+          .ovana-mobile-full form button { width: 100% !important; justify-content: center !important; }
+        }
       `}</style>
 
       {loadError && (
@@ -1561,8 +1571,8 @@ export default function OvanaFarmDashboard() {
       )}
 
       {/* Header */}
-      <div style={{ background: C.brand }} className="px-5 md:px-8 pt-6 pb-8">
-        <div className="flex flex-wrap items-end justify-between gap-4">
+      <div style={{ background: C.brand }} className="px-4 sm:px-5 lg:px-8 xl:px-10 pt-5 sm:pt-6 pb-8">
+        <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-5">
           <div className="flex items-center gap-3">
             <div className="rounded-full p-2 flex items-center justify-center" style={{ background: C.green, width: 48, height: 48 }}>
               <img src={OVANA_ICON} alt="Logo Ovana Farm" style={{ width: 32, height: 32, objectFit: 'contain' }} />
@@ -1576,14 +1586,14 @@ export default function OvanaFarmDashboard() {
               </div>
             </div>
           </div>
-          <div className="flex flex-wrap items-end gap-3 text-sm font-semibold" style={{ color: C.ink }}>
+          <div className="w-full lg:w-auto grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm font-semibold" style={{ color: C.ink }}>
             <Field label="Tanggal mulai usaha">
               <TextInput
                 type="date"
                 value={settings.startDate || ''}
                 max={todayISO()}
                 onChange={(e) => updateStartDate(e.target.value)}
-                style={{ width: 155, background: '#FFFFFF', border: `1px solid ${C.greenSoft}`, color: C.ink }}
+                style={{ width: '100%', minWidth: 0, background: '#FFFFFF', border: `1px solid ${C.greenSoft}`, color: C.ink }}
               />
             </Field>
             <Field label="Jumlah ayam">
@@ -1592,7 +1602,7 @@ export default function OvanaFarmDashboard() {
                   type="number" min="0" placeholder="mis. 500"
                   value={settings.flockSize || ''}
                   onChange={(e) => updateFlockSize(e.target.value)}
-                  style={{ width: 100, background: '#FFFFFF', border: `1px solid ${C.greenSoft}`, color: C.ink }}
+                  style={{ width: '100%', minWidth: 0, background: '#FFFFFF', border: `1px solid ${C.greenSoft}`, color: C.ink }}
                 />
                 <span>ekor</span>
               </div>
@@ -1601,7 +1611,7 @@ export default function OvanaFarmDashboard() {
         </div>
 
         {/* KPI strip */}
-        <div className="flex flex-wrap gap-3 mt-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 mt-6">
           <KpiCard icon={Egg} label="Telur hari ini" value={`${kpis.todayTotal} butir`}
             sub={kpis.todayTotal === 0 ? 'Belum dicatat hari ini' : undefined} accent={C.amberDeep} />
           <KpiCard icon={Droplets} label="Rata² 7 hari" value={`${kpis.avg7} butir/hari`} accent={C.sage} />
@@ -1614,8 +1624,8 @@ export default function OvanaFarmDashboard() {
       </div>
 
       {/* Tabs */}
-      <div className="px-5 md:px-8 -mt-4">
-        <div className="flex gap-1 overflow-x-auto rounded-xl p-1.5"
+      <div className="px-4 sm:px-5 lg:px-8 xl:px-10 -mt-4">
+        <div className="ovana-tabs flex w-full gap-1 overflow-x-auto rounded-xl p-1.5"
           style={{ background: C.panelAlt, border: `1px solid ${C.border}`, width: 'fit-content' }}>
           {TABS.map(({ key, label, icon: Icon }) => {
             const active = tab === key;
@@ -1623,7 +1633,7 @@ export default function OvanaFarmDashboard() {
               <button
                 key={key}
                 onClick={() => setTab(key)}
-                className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors"
+                className="flex-none lg:flex-1 flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors"
                 style={{
                   background: active ? C.panel : 'transparent',
                   color: active ? C.green : C.inkSoft,
@@ -1638,7 +1648,7 @@ export default function OvanaFarmDashboard() {
       </div>
 
       {/* Content */}
-      <div className="px-5 md:px-8 py-6 max-w-4xl">
+      <div className="ovana-mobile-full w-full px-4 sm:px-5 lg:px-8 xl:px-10 py-5 lg:py-8">
         {tab === 'eggs' && (
           <EggsTab
             records={data.eggs}
