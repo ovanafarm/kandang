@@ -1567,6 +1567,32 @@ function ProjectTab({ finance, settings, eggSales, feed, feedSales }) {
     0
   );
 
+  // Dana yang benar-benar keluar dari kantong pribadi.
+  // Ini berbeda dari "investasi tetap": pembelian stok pakan dengan uang pribadi
+  // tetap tercatat sebagai dana pribadi tertanam, meskipun secara akuntansi
+  // stok pakan masih merupakan persediaan dan belum seluruhnya menjadi biaya profit.
+  const personalExpenseRows = [...finance]
+    .filter(
+      (r) =>
+        r.type === 'expense' &&
+        r.fundSource === 'pribadi' &&
+        r.date <= today
+    );
+
+  const totalPersonalFunds = personalExpenseRows.reduce(
+    (sum, r) => sum + (Number(r.amount) || 0),
+    0
+  );
+
+  const personalFixedInvestment = personalExpenseRows
+    .filter((r) => capitalCategories.has(r.category))
+    .reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
+
+  const personalWorkingCapital = Math.max(
+    0,
+    totalPersonalFunds - personalFixedInvestment
+  );
+
   const totalOperatingRevenue = financeFromStart
     .filter((r) => r.type === 'income')
     .reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
@@ -1904,14 +1930,14 @@ function ProjectTab({ finance, settings, eggSales, feed, feedSales }) {
     <div className="flex flex-col gap-6">
       <SectionCard
         title="Proyeksi usaha & BEP"
-        description="BEP dihitung dari profit operasional yang terkumpul untuk mengembalikan modal/investasi. Pembelian stok pakan belum dianggap biaya profit sampai pakan dipakai atau terjual."
+        description="BEP tetap dihitung dari profit operasional. Dana pribadi ditampilkan terpisah agar uang yang kamu keluarkan untuk kandang, stok pakan, dan biaya lain tetap terlihat tanpa mencampur persediaan dengan biaya profit."
       >
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
           {[
             ['Mulai usaha', prettyDate(startDate)],
             ['Hari berjalan', `${daysRunning} hari`],
-            ['Modal/investasi tercatat', idr(totalCapital)],
-            ['Biaya operasional terpakai', idr(totalOperatingCost)],
+            ['Investasi tetap', idr(totalCapital)],
+            ['Dana pribadi tertanam', idr(totalPersonalFunds)],
           ].map(([label, value]) => (
             <div
               key={label}
@@ -1932,6 +1958,21 @@ function ProjectTab({ finance, settings, eggSales, feed, feedSales }) {
               </div>
             </div>
           ))}
+        </div>
+
+        <div
+          className="mt-3 rounded-lg px-3 py-2 text-xs"
+          style={{
+            background: C.panelAlt,
+            border: `1px solid ${C.border}`,
+            color: C.inkSoft,
+          }}
+        >
+          Dana pribadi tertanam = investasi tetap pribadi <b>{idr(personalFixedInvestment)}</b>
+          {' + '}
+          modal kerja/biaya yang dibayar pribadi <b>{idr(personalWorkingCapital)}</b>.
+          Pembelian stok pakan dengan uang pribadi masuk ke angka ini, tetapi untuk profit
+          biaya pakan tetap diakui saat pakan dipakai atau terjual.
         </div>
       </SectionCard>
 
