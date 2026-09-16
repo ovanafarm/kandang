@@ -459,10 +459,13 @@ function EggsTab({ salesRecords, onAddSale, onDeleteSale }) {
 function FeedTab({
   records,
   stockRecords,
+  saleRecords,
   onAdd,
   onDelete,
   onAddStock,
   onDeleteStock,
+  onAddSale,
+  onDeleteSale,
 }) {
   const FEED_TYPES = ['Konsentrat', 'Jagung giling', 'Dedak', 'Campuran', 'Lainnya'];
 
@@ -481,6 +484,15 @@ function FeedTab({
     notes: '',
   });
 
+  const [saleForm, setSaleForm] = useState({
+    date: todayISO(),
+    feedType: 'Konsentrat',
+    saleKg: '',
+    pricePerKg: '',
+    buyer: '',
+    notes: '',
+  });
+
   const sorted = useMemo(
     () => [...records].sort((a, b) => b.date.localeCompare(a.date)),
     [records]
@@ -489,6 +501,11 @@ function FeedTab({
   const sortedStock = useMemo(
     () => [...stockRecords].sort((a, b) => b.date.localeCompare(a.date)),
     [stockRecords]
+  );
+
+  const sortedSales = useMemo(
+    () => [...saleRecords].sort((a, b) => b.date.localeCompare(a.date)),
+    [saleRecords]
   );
 
   const chartData = useMemo(
@@ -517,8 +534,16 @@ function FeedTab({
         .filter((r) => r.feedType === type)
         .reduce((sum, r) => sum + (Number(r.feedCost) || 0), 0);
 
-      const stock = incoming - used;
-      const stockValue = Math.max(0, incomingCost - usedCost);
+      const sold = saleRecords
+        .filter((r) => r.feedType === type)
+        .reduce((sum, r) => sum + (Number(r.saleKg) || 0), 0);
+
+      const soldCost = saleRecords
+        .filter((r) => r.feedType === type)
+        .reduce((sum, r) => sum + (Number(r.costTotal) || 0), 0);
+
+      const stock = incoming - used - sold;
+      const stockValue = Math.max(0, incomingCost - usedCost - soldCost);
       const unitCost = stock > 0
         ? stockValue / stock
         : incoming > 0
@@ -550,14 +575,16 @@ function FeedTab({
         incomingCost,
         used,
         usedCost,
+        sold,
+        soldCost,
         stock,
         stockValue,
         unitCost,
         avgDaily,
         daysLeft,
       };
-    }).filter((x) => x.incoming > 0 || x.used > 0);
-  }, [records, stockRecords]);
+    }).filter((x) => x.incoming > 0 || x.used > 0 || x.sold > 0);
+  }, [records, stockRecords, saleRecords]);
 
   const submit = (e) => {
     e.preventDefault();
@@ -611,11 +638,53 @@ function FeedTab({
     setStockForm({ ...stockForm, stockKg: '', purchaseCost: '', notes: '' });
   };
 
+  const submitSale = (e) => {
+    e.preventDefault();
+
+    const saleKg = Number(saleForm.saleKg) || 0;
+    const pricePerKg = Number(saleForm.pricePerKg) || 0;
+
+    if (saleKg <= 0 || pricePerKg <= 0) return;
+
+    const selectedStock = stockSummary.find((x) => x.type === saleForm.feedType);
+    const available = selectedStock?.stock || 0;
+
+    if (saleKg > available) {
+      alert(`Stok ${saleForm.feedType} hanya ${available.toLocaleString('id-ID', { maximumFractionDigits: 2 })} kg.`);
+      return;
+    }
+
+    onAddSale({
+      date: saleForm.date,
+      feedType: saleForm.feedType,
+      saleKg,
+      pricePerKg,
+      buyer: saleForm.buyer.trim(),
+      notes: saleForm.notes.trim(),
+    });
+
+    setSaleForm({
+      ...saleForm,
+      saleKg: '',
+      pricePerKg: '',
+      buyer: '',
+      notes: '',
+    });
+  };
+
+  const salePreviewTotal =
+    (Number(saleForm.saleKg) || 0) * (Number(saleForm.pricePerKg) || 0);
+
+  const selectedSaleStock = stockSummary.find((x) => x.type === saleForm.feedType);
+  const salePreviewCost =
+    (Number(saleForm.saleKg) || 0) * (selectedSaleStock?.unitCost || 0);
+  const salePreviewMargin = salePreviewTotal - salePreviewCost;
+
   return (
     <div className="flex flex-col gap-6">
       <SectionCard
         title="Stok pakan"
-        description="Stok tersedia dihitung otomatis dari stok masuk dikurangi pemakaian harian."
+        description="Stok tersedia dihitung otomatis dari stok masuk dikurangi pemakaian kandang dan penjualan pakan."
       >
         {stockSummary.length === 0 ? (
           <EmptyRow text="Belum ada stok pakan. Tambahkan stok masuk terlebih dahulu." />
@@ -655,6 +724,8 @@ function FeedTab({
                     Masuk {s.incoming.toLocaleString('id-ID', { maximumFractionDigits: 1 })} kg
                     {' · '}
                     Terpakai {s.used.toLocaleString('id-ID', { maximumFractionDigits: 1 })} kg
+                    {' · '}
+                    Terjual {s.sold.toLocaleString('id-ID', { maximumFractionDigits: 1 })} kg
                   </div>
 
                   <div className="text-xs mt-1" style={{ color: C.inkSoft }}>
@@ -752,6 +823,96 @@ function FeedTab({
         </form>
       </SectionCard>
 
+      <SectionCard
+        title="Jual pakan"
+        description="Penjualan pakan otomatis mengurangi stok dan menambah pemasukan Keuangan."
+      >
+        <form onSubmit={submitSale} className="flex flex-wrap gap-3 items-end">
+          <Field label="Tanggal jual">
+            <TextInput
+              type="date"
+              value={saleForm.date}
+              max={todayISO()}
+              onChange={(e) => setSaleForm({ ...saleForm, date: e.target.value })}
+            />
+          </Field>
+
+          <Field label="Jenis pakan">
+            <Select
+              value={saleForm.feedType}
+              onChange={(e) => setSaleForm({ ...saleForm, feedType: e.target.value })}
+            >
+              {FEED_TYPES.map((type) => <option key={type}>{type}</option>)}
+            </Select>
+          </Field>
+
+          <Field label="Qty terjual (kg)">
+            <TextInput
+              type="number"
+              min="0.01"
+              step="0.01"
+              placeholder="mis. 1"
+              value={saleForm.saleKg}
+              onChange={(e) => setSaleForm({ ...saleForm, saleKg: e.target.value })}
+              style={{ width: 130 }}
+            />
+          </Field>
+
+          <Field label="Harga jual / kg">
+            <CurrencyInput
+              value={saleForm.pricePerKg}
+              onChange={(value) => setSaleForm({ ...saleForm, pricePerKg: value })}
+              placeholder="Rp 0"
+              style={{ width: 150 }}
+            />
+          </Field>
+
+          <Field label="Pembeli (opsional)">
+            <TextInput
+              type="text"
+              placeholder="mis. tetangga"
+              value={saleForm.buyer}
+              onChange={(e) => setSaleForm({ ...saleForm, buyer: e.target.value })}
+              style={{ width: 160 }}
+            />
+          </Field>
+
+          <Field label="Catatan">
+            <TextInput
+              type="text"
+              placeholder="opsional"
+              value={saleForm.notes}
+              onChange={(e) => setSaleForm({ ...saleForm, notes: e.target.value })}
+              style={{ width: 170 }}
+            />
+          </Field>
+
+          <button
+            type="submit"
+            className="h-[38px] rounded-lg px-4 flex items-center gap-1.5 text-sm font-medium"
+            style={{ background: C.amberDeep, color: '#fff' }}
+          >
+            <Plus size={16} /> Simpan penjualan
+          </button>
+        </form>
+
+        {salePreviewTotal > 0 && (
+          <div
+            className="mt-3 rounded-lg px-3 py-2 text-xs"
+            style={{ background: C.panelAlt, border: `1px solid ${C.border}`, color: C.inkSoft }}
+          >
+            Total penjualan: <b style={{ color: C.ink }}>{idr(salePreviewTotal)}</b>
+            {' · '}
+            Modal pakan terjual: <b style={{ color: C.ink }}>{idr(salePreviewCost)}</b>
+            {' · '}
+            Margin estimasi:{' '}
+            <b style={{ color: salePreviewMargin >= 0 ? C.green : C.rust }}>
+              {idr(salePreviewMargin)}
+            </b>
+          </div>
+        )}
+      </SectionCard>
+
       <SectionCard title="Catat pakan & minum" description="Input konsumsi harian. Qty pakan otomatis dikonversi menjadi biaya operasional berdasarkan harga rata-rata stok.">
         <form onSubmit={submit} className="flex flex-wrap gap-3 items-end">
           <Field label="Tanggal">
@@ -829,6 +990,36 @@ function FeedTab({
                 <Bar dataKey="pakan" fill={C.sage} radius={[4, 4, 0, 0]} name="Pakan (kg)" />
               </BarChart>
             </ResponsiveContainer>
+          </div>
+        )}
+      </SectionCard>
+
+      <SectionCard title="Riwayat penjualan pakan">
+        {sortedSales.length === 0 ? (
+          <EmptyRow text="Belum ada penjualan pakan." />
+        ) : (
+          <div className="flex flex-col divide-y" style={{ borderColor: C.border }}>
+            {sortedSales.map((r) => (
+              <div
+                key={r.id}
+                className="flex items-center justify-between py-2.5 gap-3 flex-wrap"
+                style={{ borderColor: C.border }}
+              >
+                <div className="text-sm font-medium" style={{ minWidth: 100 }}>
+                  {fmtDate(r.date)}
+                </div>
+                <div className="text-sm flex-1" style={{ color: C.inkSoft }}>
+                  <b style={{ color: C.ink }}>{r.feedType}</b>
+                  {' · '}{r.saleKg.toLocaleString('id-ID', { maximumFractionDigits: 2 })} kg
+                  {' · '}{idr(r.pricePerKg)}/kg
+                  {' · total '}{idr(r.amount)}
+                  {' · margin ±'}{idr(r.margin)}
+                  {r.buyer ? ` · ${r.buyer}` : ''}
+                  {r.notes ? ` · ${r.notes}` : ''}
+                </div>
+                <DeleteBtn onClick={() => onDeleteSale(r.id)} />
+              </div>
+            ))}
           </div>
         )}
       </SectionCard>
@@ -989,7 +1180,7 @@ function FinanceTab({ records, onAdd, onDelete }) {
     <div className="flex flex-col gap-6">
       <SectionCard title="Catat pemasukan / pengeluaran" description="Lacak biaya operasional dan pemasukan selain penjualan telur.">
         <div className="rounded-lg px-3 py-2 text-xs mb-4" style={{ background: C.amberSoft, color: C.ink }}>
-          Penjualan telur dicatat dari menu <b>Produksi Telur</b> supaya stok telur ikut berkurang dan pemasukan masuk otomatis ke Keuangan.
+          Penjualan telur dicatat dari menu <b>Penjualan Telur</b>. Penjualan pakan dicatat dari menu <b>Pakan & Minum</b>. Keduanya otomatis masuk ke Keuangan.
         </div>
         <form onSubmit={submit} className="flex flex-wrap gap-3 items-end">
           <Field label="Tanggal">
@@ -1074,7 +1265,7 @@ function FinanceTab({ records, onAdd, onDelete }) {
 /* ---------------------------------------------------------------
    Tab: Proyeksi Usaha
 ------------------------------------------------------------------*/
-function ProjectTab({ finance, settings, eggSales, feed }) {
+function ProjectTab({ finance, settings, eggSales, feed, feedSales }) {
   const startDate = settings.startDate || '';
   const today = todayISO();
 
@@ -1231,6 +1422,23 @@ function ProjectTab({ finance, settings, eggSales, feed }) {
     ? recentSalesRevenue / recentSalesKg
     : 0;
 
+  const recentFeedSales = feedSales.filter(
+    (r) => r.date >= lookbackStart && r.date <= today
+  );
+
+  const recentFeedSaleRevenue = recentFeedSales.reduce(
+    (sum, r) => sum + (Number(r.amount) || 0),
+    0
+  );
+
+  const recentFeedSaleCost = recentFeedSales.reduce(
+    (sum, r) => sum + (Number(r.costTotal) || 0),
+    0
+  );
+
+  const recentFeedSaleMargin =
+    recentFeedSaleRevenue - recentFeedSaleCost;
+
   // Pembelian stok pakan sudah menjadi pengeluaran kas di Keuangan.
   // Untuk PROFIT operasional harian, biaya pakan memakai qty yang benar-benar terpakai.
   const recentFeedUsageCost = feed
@@ -1250,7 +1458,7 @@ function ProjectTab({ finance, settings, eggSales, feed }) {
     .reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
 
   const avgDailyRevenue = lookbackDays > 0
-    ? recentSalesRevenue / lookbackDays
+    ? (recentSalesRevenue + recentFeedSaleRevenue) / lookbackDays
     : 0;
 
   const avgDailyFeedCost = lookbackDays > 0
@@ -1261,8 +1469,12 @@ function ProjectTab({ finance, settings, eggSales, feed }) {
     ? recentOtherOperatingExpense / lookbackDays
     : 0;
 
+  const avgDailyFeedSaleCost = lookbackDays > 0
+    ? recentFeedSaleCost / lookbackDays
+    : 0;
+
   const avgDailyOperatingCost =
-    avgDailyFeedCost + avgDailyOtherExpense;
+    avgDailyFeedCost + avgDailyFeedSaleCost + avgDailyOtherExpense;
 
   const avgDailyProfit =
     avgDailyRevenue - avgDailyOperatingCost;
@@ -1311,8 +1523,8 @@ function ProjectTab({ finance, settings, eggSales, feed }) {
       ? `± ${daysToBep} hari lagi berdasarkan rata-rata ${lookbackDays} hari terakhir`
       : currentNet >= 0
         ? 'Posisi kas sudah non-negatif.'
-        : recentSalesRevenue <= 0
-          ? `Belum ada penjualan telur dalam ${lookbackDays} hari terakhir.`
+        : recentSalesRevenue + recentFeedSaleRevenue <= 0
+          ? `Belum ada penjualan telur atau pakan dalam ${lookbackDays} hari terakhir.`
           : avgDailyProfit <= 0
             ? 'Rata-rata profit operasional belum positif.'
             : 'Data belum cukup untuk proyeksi.';
@@ -1321,7 +1533,7 @@ function ProjectTab({ finance, settings, eggSales, feed }) {
     <div className="flex flex-col gap-6">
       <SectionCard
         title="Proyeksi usaha & BEP"
-        description="BEP aktual memakai pemasukan dan pengeluaran nyata. Estimasi ke depan memakai rata-rata penjualan telur dan biaya operasional 30 hari terakhir."
+        description="BEP aktual memakai pemasukan dan pengeluaran nyata. Estimasi ke depan memakai penjualan telur, margin penjualan pakan, dan biaya operasional 30 hari terakhir."
       >
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
           {[
@@ -1392,9 +1604,15 @@ function ProjectTab({ finance, settings, eggSales, feed }) {
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
           {[
             ['Penjualan telur', idr(recentSalesRevenue)],
-            ['Telur terjual', `${recentSalesKg.toLocaleString('id-ID', { maximumFractionDigits: 2 })} kg`],
-            ['Biaya operasional', idr(recentFeedUsageCost + recentOtherOperatingExpense)],
-            ['Profit operasional', idr(recentSalesRevenue - recentFeedUsageCost - recentOtherOperatingExpense)],
+            ['Penjualan pakan', idr(recentFeedSaleRevenue)],
+            ['Margin jual pakan', idr(recentFeedSaleMargin)],
+            ['Profit operasional', idr(
+              recentSalesRevenue
+              + recentFeedSaleRevenue
+              - recentFeedUsageCost
+              - recentFeedSaleCost
+              - recentOtherOperatingExpense
+            )],
           ].map(([label, value]) => (
             <div
               key={label}
@@ -1418,9 +1636,11 @@ function ProjectTab({ finance, settings, eggSales, feed }) {
         </div>
 
         <div className="text-xs mt-3" style={{ color: C.inkSoft }}>
-          Rata-rata omzet: <b>{idr(avgDailyRevenue)} / hari</b>
+          Rata-rata pemasukan: <b>{idr(avgDailyRevenue)} / hari</b>
           {' · '}
           biaya pakan terpakai: <b>{idr(avgDailyFeedCost)} / hari</b>
+          {' · '}
+          modal pakan terjual: <b>{idr(avgDailyFeedSaleCost)} / hari</b>
           {' · '}
           biaya lain: <b>{idr(avgDailyOtherExpense)} / hari</b>
           {' · '}
@@ -1554,14 +1774,14 @@ export default function OvanaFarmDashboard() {
   const [loadError, setLoadError] = useState(false);
   const [tab, setTab] = useState('eggs');
   const [settings, setSettings] = useState({ flockSize: 0, farmName: 'Ovana Farm', startDate: '' });
-  const [data, setData] = useState({ eggs: [], eggSales: [], feed: [], feedStock: [], health: [], finance: [] });
+  const [data, setData] = useState({ eggs: [], eggSales: [], feed: [], feedStock: [], feedSales: [], health: [], finance: [] });
 
   useEffect(() => {
     let mounted = true;
 
     (async () => {
       try {
-        const [eggResult, eggSalesResult, feedResult, feedStockResult, healthResult, financeResult, settingResult] = await Promise.all([
+        const [eggResult, eggSalesResult, feedResult, feedStockResult, feedSalesResult, healthResult, financeResult, settingResult] = await Promise.all([
           supabase
             .from('kandang_telur')
             .select('id, tanggal, grade_a, grade_b, retak')
@@ -1577,6 +1797,10 @@ export default function OvanaFarmDashboard() {
           supabase
             .from('kandang_stok_pakan')
             .select('id, tanggal, jenis_pakan, jumlah_kg, harga_total, catatan')
+            .order('tanggal', { ascending: true }),
+          supabase
+            .from('kandang_penjualan_pakan')
+            .select('id, tanggal, jenis_pakan, jumlah_kg, harga_jual_per_kg, nominal, harga_pokok_per_kg, harga_pokok_total, laba_estimasi, pembeli, catatan, keuangan_id')
             .order('tanggal', { ascending: true }),
           supabase
             .from('kandang_kesehatan')
@@ -1596,6 +1820,7 @@ export default function OvanaFarmDashboard() {
         if (eggSalesResult.error) throw eggSalesResult.error;
         if (feedResult.error) throw feedResult.error;
         if (feedStockResult.error) throw feedStockResult.error;
+        if (feedSalesResult.error) throw feedSalesResult.error;
         if (healthResult.error) throw healthResult.error;
         if (financeResult.error) throw financeResult.error;
         if (settingResult.error) throw settingResult.error;
@@ -1638,6 +1863,21 @@ export default function OvanaFarmDashboard() {
           notes: r.catatan || '',
         }));
 
+        const feedSales = (feedSalesResult.data || []).map((r) => ({
+          id: r.id,
+          date: r.tanggal,
+          feedType: r.jenis_pakan,
+          saleKg: Number(r.jumlah_kg) || 0,
+          pricePerKg: Number(r.harga_jual_per_kg) || 0,
+          amount: Number(r.nominal) || 0,
+          costPerKg: Number(r.harga_pokok_per_kg) || 0,
+          costTotal: Number(r.harga_pokok_total) || 0,
+          margin: Number(r.laba_estimasi) || 0,
+          buyer: r.pembeli || '',
+          notes: r.catatan || '',
+          financeId: r.keuangan_id || null,
+        }));
+
         const health = (healthResult.data || []).map((r) => ({
           id: r.id,
           date: r.tanggal,
@@ -1667,7 +1907,7 @@ export default function OvanaFarmDashboard() {
 
         if (!mounted) return;
 
-        setData({ eggs, eggSales, feed, feedStock, health, finance });
+        setData({ eggs, eggSales, feed, feedStock, feedSales, health, finance });
         setSettings(farmSettings);
       } catch (e) {
         console.error('Gagal memuat data:', e);
@@ -1942,6 +2182,81 @@ export default function OvanaFarmDashboard() {
       ...prev,
       feedStock: prev.feedStock.filter((r) => r.id !== id),
       finance: prev.finance.filter((r) => r.refStockId !== id),
+    }));
+  };
+
+
+  const addFeedSaleRecord = async (record) => {
+    const { data: result, error } = await supabase
+      .rpc('kandang_jual_pakan', {
+        p_tanggal: record.date,
+        p_jenis_pakan: record.feedType,
+        p_jumlah_kg: record.saleKg,
+        p_harga_jual_per_kg: record.pricePerKg,
+        p_pembeli: record.buyer || null,
+        p_catatan: record.notes || null,
+      })
+      .single();
+
+    if (error) {
+      console.error('Gagal menyimpan penjualan pakan:', error);
+      alert(error.message || 'Gagal menyimpan penjualan pakan.');
+      return;
+    }
+
+    const newSale = {
+      id: result.sale_id,
+      date: record.date,
+      feedType: record.feedType,
+      saleKg: Number(record.saleKg),
+      pricePerKg: Number(record.pricePerKg),
+      amount: Number(result.nominal) || 0,
+      costPerKg: Number(result.harga_pokok_per_kg) || 0,
+      costTotal: Number(result.harga_pokok_total) || 0,
+      margin: Number(result.laba_estimasi) || 0,
+      buyer: record.buyer || '',
+      notes: record.notes || '',
+      financeId: result.finance_id || null,
+    };
+
+    const newFinance = result.finance_id
+      ? {
+          id: result.finance_id,
+          date: record.date,
+          type: 'income',
+          category: 'Penjualan pakan',
+          amount: Number(result.nominal) || 0,
+          notes: `Otomatis dari penjualan pakan: ${record.feedType} ${record.saleKg} kg`,
+          refStockId: null,
+        }
+      : null;
+
+    setData((prev) => ({
+      ...prev,
+      feedSales: [...prev.feedSales, newSale],
+      finance: newFinance ? [...prev.finance, newFinance] : prev.finance,
+    }));
+  };
+
+  const deleteFeedSaleRecord = async (id) => {
+    const sale = data.feedSales.find((r) => r.id === id);
+
+    const { error } = await supabase.rpc('kandang_hapus_penjualan_pakan', {
+      p_sale_id: id,
+    });
+
+    if (error) {
+      console.error('Gagal menghapus penjualan pakan:', error);
+      alert(error.message || 'Gagal menghapus penjualan pakan.');
+      return;
+    }
+
+    setData((prev) => ({
+      ...prev,
+      feedSales: prev.feedSales.filter((r) => r.id !== id),
+      finance: sale?.financeId
+        ? prev.finance.filter((r) => r.id !== sale.financeId)
+        : prev.finance,
     }));
   };
 
@@ -2255,10 +2570,13 @@ export default function OvanaFarmDashboard() {
           <FeedTab
             records={data.feed}
             stockRecords={data.feedStock}
+            saleRecords={data.feedSales}
             onAdd={addFeedRecord}
             onDelete={deleteFeedRecord}
             onAddStock={addFeedStockRecord}
             onDeleteStock={deleteFeedStockRecord}
+            onAddSale={addFeedSaleRecord}
+            onDeleteSale={deleteFeedSaleRecord}
           />
         )}
         {tab === 'health' && (
@@ -2276,10 +2594,9 @@ export default function OvanaFarmDashboard() {
           />
         )}
         {tab === 'project' && (
-          <ProjectTab finance={data.finance} settings={settings} eggSales={data.eggSales} feed={data.feed} />
+          <ProjectTab finance={data.finance} settings={settings} eggSales={data.eggSales} feed={data.feed} feedSales={data.feedSales} />
         )}
       </div>
     </div>
   );
 }
- 
