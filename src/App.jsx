@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, ReferenceLine,
+  ResponsiveContainer, ReferenceLine, ReferenceDot,
 } from 'recharts';
 import {
   Egg, Wheat, HeartPulse, Wallet, Plus, Trash2, Loader2, AlertCircle,
@@ -630,6 +630,7 @@ function FeedTab({
     feedType: 'Konsentrat',
     stockKg: '',
     purchaseCost: '',
+    fundSource: 'pribadi',
     notes: '',
   });
 
@@ -781,6 +782,7 @@ function FeedTab({
       feedType: stockForm.feedType,
       stockKg,
       purchaseCost,
+      fundSource: stockForm.fundSource,
       notes: stockForm.notes.trim(),
     });
 
@@ -951,6 +953,16 @@ function FeedTab({
               Harga rata-rata ≈ <b>{idr(Number(stockForm.purchaseCost) / Number(stockForm.stockKg))}/kg</b>
             </div>
           )}
+
+          <Field label="Sumber dana">
+            <Select
+              value={stockForm.fundSource}
+              onChange={(e) => setStockForm({ ...stockForm, fundSource: e.target.value })}
+            >
+              <option value="pribadi">Uang pribadi</option>
+              <option value="kas_usaha">Kas usaha</option>
+            </Select>
+          </Field>
 
           <Field label="Catatan">
             <TextInput
@@ -1313,15 +1325,25 @@ function HealthTab({ records, onAdd, onDelete, onEdit }) {
    Tab: Keuangan
 ------------------------------------------------------------------*/
 function FinanceTab({ records, onAdd, onDelete, onEdit, lockedIds }) {
-  const [form, setForm] = useState({ date: todayISO(), type: 'income', category: 'Penjualan ayam afkir', amount: '', notes: '' });
+  const [form, setForm] = useState({
+    date: todayISO(),
+    type: 'income',
+    category: 'Penjualan ayam afkir',
+    amount: '',
+    fundSource: 'pribadi',
+    notes: '',
+  });
   const sorted = useMemo(() => [...records].sort((a, b) => b.date.localeCompare(a.date)), [records]);
   const chartData = useMemo(() => {
     const byDate = {};
     [...records].sort((a, b) => a.date.localeCompare(b.date)).slice(-14).forEach((r) => {
       const k = r.date.slice(5);
       if (!byDate[k]) byDate[k] = { date: k, masuk: 0, keluar: 0 };
-      if (r.type === 'income') byDate[k].masuk += r.amount;
-      else byDate[k].keluar += r.amount;
+      if (r.type === 'income') {
+        byDate[k].masuk += Number(r.amount) || 0;
+      } else if (r.fundSource === 'kas_usaha') {
+        byDate[k].keluar += Number(r.amount) || 0;
+      }
     });
     return Object.values(byDate);
   }, [records]);
@@ -1333,13 +1355,21 @@ function FinanceTab({ records, onAdd, onDelete, onEdit, lockedIds }) {
     e.preventDefault();
     const amount = Number(form.amount) || 0;
     if (amount <= 0) return;
-    onAdd({ id: uid(), date: form.date, type: form.type, category: form.category, amount, notes: form.notes.trim() });
+    onAdd({
+      id: uid(),
+      date: form.date,
+      type: form.type,
+      category: form.category,
+      amount,
+      fundSource: form.type === 'expense' ? form.fundSource : 'kas_usaha',
+      notes: form.notes.trim(),
+    });
     setForm({ ...form, amount: '', notes: '' });
   };
 
   return (
     <div className="flex flex-col gap-6">
-      <SectionCard title="Catat pemasukan / pengeluaran" description="Lacak biaya operasional dan pemasukan selain penjualan telur.">
+      <SectionCard title="Catat pemasukan / pengeluaran" description="Catat transaksi sekaligus sumber dana. Pengeluaran dari uang pribadi tetap menjadi biaya usaha, tetapi tidak mengurangi saldo kas usaha.">
         <div className="rounded-lg px-3 py-2 text-xs mb-4" style={{ background: C.amberSoft, color: C.ink }}>
           Penjualan telur dicatat dari menu <b>Penjualan Telur</b>. Penjualan pakan dicatat dari menu <b>Pakan & Minum</b>. Keduanya otomatis masuk ke Keuangan.
         </div>
@@ -1352,6 +1382,7 @@ function FinanceTab({ records, onAdd, onDelete, onEdit, lockedIds }) {
             <Select value={form.type} onChange={(e) => setForm({
               ...form, type: e.target.value,
               category: e.target.value === 'income' ? incomeCategories[0] : expenseCategories[0],
+              fundSource: e.target.value === 'expense' ? form.fundSource : 'kas_usaha',
             })}>
               <option value="income">Pemasukan</option>
               <option value="expense">Pengeluaran</option>
@@ -1372,6 +1403,17 @@ function FinanceTab({ records, onAdd, onDelete, onEdit, lockedIds }) {
               style={{ width: 170 }}
             />
           </Field>
+          {form.type === 'expense' && (
+            <Field label="Sumber dana">
+              <Select
+                value={form.fundSource}
+                onChange={(e) => setForm({ ...form, fundSource: e.target.value })}
+              >
+                <option value="pribadi">Uang pribadi</option>
+                <option value="kas_usaha">Kas usaha</option>
+              </Select>
+            </Field>
+          )}
           <Field label="Catatan (opsional)">
             <TextInput type="text" placeholder="mis. toko, pembelian" value={form.notes}
               onChange={(e) => setForm({ ...form, notes: e.target.value })} style={{ width: 180 }} />
@@ -1383,7 +1425,7 @@ function FinanceTab({ records, onAdd, onDelete, onEdit, lockedIds }) {
         </form>
       </SectionCard>
 
-      <SectionCard title="Arus kas (14 transaksi terakhir)">
+      <SectionCard title="Arus kas usaha (14 transaksi terakhir)">
         {chartData.length === 0 ? <EmptyRow text="Belum ada data keuangan." /> : (
           <div style={{ height: 220 }}>
             <ResponsiveContainer width="100%" height="100%">
@@ -1411,7 +1453,9 @@ function FinanceTab({ records, onAdd, onDelete, onEdit, lockedIds }) {
                   <span style={{ color: r.type === 'income' ? C.sage : C.rust, fontWeight: 700 }}>
                     {r.type === 'income' ? '+' : '-'}{idr(r.amount)}
                   </span>
-                  {' · '}{r.category}{r.notes ? ` · ${r.notes}` : ''}
+                  {' · '}{r.category}
+                  {r.type === 'expense' ? ` · ${r.fundSource === 'kas_usaha' ? 'Kas usaha' : 'Uang pribadi'}` : ''}
+                  {r.notes ? ` · ${r.notes}` : ''}
                 </div>
                 {lockedIds?.has(r.id) ? (
                   <span className="text-[11px] font-semibold rounded-full px-2 py-1" style={{ background: C.panelAlt, color: C.inkSoft }}>
@@ -1805,6 +1849,57 @@ function ProjectTab({ finance, settings, eggSales, feed, feedSales }) {
             ? 'Rata-rata profit operasional belum positif.'
             : 'Data belum cukup untuk proyeksi.';
 
+  const lastActualPoint = [...chartData]
+    .reverse()
+    .find((row) => row.actual !== null && row.actual !== undefined);
+
+  const bepTooltip = ({ active, payload, label }) => {
+    if (!active || !payload || payload.length === 0) return null;
+
+    const validItems = payload.filter(
+      (item) => item.value !== null && item.value !== undefined
+    );
+
+    if (validItems.length === 0) return null;
+
+    return (
+      <div
+        className="rounded-lg px-3 py-2 shadow-lg"
+        style={{
+          background: C.green,
+          color: '#fff',
+          minWidth: 170,
+          border: '1px solid rgba(255,255,255,0.25)',
+        }}
+      >
+        <div className="text-xs font-semibold mb-1">{label}</div>
+        {validItems.map((item) => (
+          <div key={item.dataKey} className="text-xs">
+            {item.dataKey === 'actual' ? 'Posisi BEP' : 'Proyeksi'}:{' '}
+            <b>{idr(Number(item.value))}</b>
+          </div>
+        ))}
+      </div>
+    );
+  };
+
+  const axisMoney = (value) => {
+    const abs = Math.abs(Number(value) || 0);
+
+    if (abs >= 1000000) {
+      return `${(Number(value) / 1000000).toLocaleString('id-ID', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      })} jt`;
+    }
+
+    if (abs >= 1000) {
+      return `${Math.round(Number(value) / 1000).toLocaleString('id-ID')} rb`;
+    }
+
+    return Math.round(Number(value) || 0).toLocaleString('id-ID');
+  };
+
   return (
     <div className="flex flex-col gap-6">
       <SectionCard
@@ -1962,7 +2057,7 @@ function ProjectTab({ finance, settings, eggSales, feed, feedSales }) {
         {chartData.length === 0 ? (
           <EmptyRow text="Belum ada data untuk kurva BEP." />
         ) : (
-          <div style={{ height: 320 }}>
+          <div style={{ height: 350 }}>
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={chartData} margin={{ left: 5, right: 15 }}>
                 <CartesianGrid stroke={C.border} vertical={false} />
@@ -1977,25 +2072,38 @@ function ProjectTab({ finance, settings, eggSales, feed, feedSales }) {
                   tick={{ fontSize: 10, fill: C.inkSoft }}
                   axisLine={false}
                   tickLine={false}
-                  tickFormatter={(v) =>
-                    Math.abs(v) >= 1000000
-                      ? `${(v / 1000000).toFixed(1)}jt`
-                      : `${Math.round(v / 1000)}rb`
-                  }
+                  width={70}
+                  tickFormatter={axisMoney}
                 />
-                <Tooltip
-                  contentStyle={chartTooltipStyle}
-                  labelStyle={{ color: '#fff' }}
-                  formatter={(value, name) => [
-                    idr(Number(value)),
-                    name === 'actual' ? 'Posisi BEP aktual' : 'Proyeksi',
-                  ]}
-                />
+                <Tooltip content={bepTooltip} />
                 <ReferenceLine
                   y={0}
                   stroke={C.inkSoft}
                   strokeDasharray="5 4"
+                  label={{
+                    value: 'BEP Rp 0',
+                    position: 'insideTopRight',
+                    fill: C.inkSoft,
+                    fontSize: 11,
+                  }}
                 />
+                {lastActualPoint && (
+                  <ReferenceDot
+                    x={lastActualPoint.label}
+                    y={lastActualPoint.actual}
+                    r={5}
+                    fill={C.green}
+                    stroke="#fff"
+                    strokeWidth={2}
+                    label={{
+                      value: idr(lastActualPoint.actual),
+                      position: 'top',
+                      fill: C.ink,
+                      fontSize: 11,
+                      fontWeight: 700,
+                    }}
+                  />
+                )}
                 <Line
                   type="monotone"
                   dataKey="actual"
@@ -2119,7 +2227,7 @@ export default function OvanaFarmDashboard() {
             .order('tanggal', { ascending: true }),
           supabase
             .from('kandang_stok_pakan')
-            .select('id, tanggal, jenis_pakan, jumlah_kg, harga_total, catatan')
+            .select('id, tanggal, jenis_pakan, jumlah_kg, harga_total, sumber_dana, catatan')
             .order('tanggal', { ascending: true }),
           supabase
             .from('kandang_penjualan_pakan')
@@ -2131,7 +2239,7 @@ export default function OvanaFarmDashboard() {
             .order('tanggal', { ascending: true }),
           supabase
             .from('kandang_keuangan')
-            .select('id, tanggal, jenis, kategori, nominal, catatan, ref_stok_pakan')
+            .select('id, tanggal, jenis, kategori, nominal, sumber_dana, catatan, ref_stok_pakan')
             .order('tanggal', { ascending: true }),
           supabase
             .from('kandang_setting')
@@ -2183,6 +2291,7 @@ export default function OvanaFarmDashboard() {
           feedType: r.jenis_pakan,
           stockKg: Number(r.jumlah_kg),
           purchaseCost: Number(r.harga_total) || 0,
+          fundSource: r.sumber_dana || 'pribadi',
           notes: r.catatan || '',
         }));
 
@@ -2216,6 +2325,7 @@ export default function OvanaFarmDashboard() {
           type: r.jenis,
           category: r.kategori,
           amount: Number(r.nominal),
+          fundSource: r.sumber_dana || (r.jenis === 'expense' ? 'pribadi' : 'kas_usaha'),
           notes: r.catatan || '',
           refStockId: r.ref_stok_pakan || null,
         }));
@@ -2451,6 +2561,7 @@ export default function OvanaFarmDashboard() {
         p_jenis_pakan: record.feedType,
         p_jumlah_kg: record.stockKg,
         p_harga_total: record.purchaseCost,
+        p_sumber_dana: record.fundSource || 'pribadi',
         p_catatan: record.notes || null,
       })
       .single();
@@ -2471,6 +2582,7 @@ export default function OvanaFarmDashboard() {
       feedType: record.feedType,
       stockKg: Number(record.stockKg),
       purchaseCost: Number(record.purchaseCost),
+      fundSource: record.fundSource || 'pribadi',
       notes: record.notes || '',
     };
 
@@ -2481,6 +2593,7 @@ export default function OvanaFarmDashboard() {
           type: 'expense',
           category: 'Pakan',
           amount: Number(record.purchaseCost),
+          fundSource: record.fundSource || 'pribadi',
           notes: financeNotes,
           refStockId: stockId,
         }
@@ -2654,9 +2767,10 @@ export default function OvanaFarmDashboard() {
         jenis: record.type,
         kategori: record.category,
         nominal: record.amount,
+        sumber_dana: record.type === 'expense' ? (record.fundSource || 'pribadi') : 'kas_usaha',
         catatan: record.notes,
       })
-      .select('id, tanggal, jenis, kategori, nominal, catatan')
+      .select('id, tanggal, jenis, kategori, nominal, sumber_dana, catatan')
       .single();
 
     if (error) {
@@ -2671,6 +2785,7 @@ export default function OvanaFarmDashboard() {
       type: inserted.jenis,
       category: inserted.kategori,
       amount: Number(inserted.nominal),
+      fundSource: inserted.sumber_dana || (inserted.jenis === 'expense' ? 'pribadi' : 'kas_usaha'),
       notes: inserted.catatan || '',
     };
 
@@ -2778,6 +2893,7 @@ export default function OvanaFarmDashboard() {
         tanggal: record.date,
         jumlah_kg: record.stockKg,
         harga_total: record.purchaseCost,
+        sumber_dana: record.fundSource || 'pribadi',
         catatan: record.notes || null,
       })
       .eq('id', record.id);
@@ -2793,7 +2909,13 @@ export default function OvanaFarmDashboard() {
       ...prev,
       feedStock: prev.feedStock.map((r) => r.id === record.id ? { ...r, ...record } : r),
       finance: prev.finance.map((r) => r.refStockId === record.id
-        ? { ...r, date: record.date, amount: Number(record.purchaseCost), notes: financeNotes }
+        ? {
+            ...r,
+            date: record.date,
+            amount: Number(record.purchaseCost),
+            fundSource: record.fundSource || 'pribadi',
+            notes: financeNotes,
+          }
         : r),
     }));
     showToast('Stok pakan berhasil diperbarui.');
@@ -2874,6 +2996,7 @@ export default function OvanaFarmDashboard() {
         jenis: record.type,
         kategori: record.category,
         nominal: record.amount,
+        sumber_dana: record.type === 'expense' ? (record.fundSource || 'pribadi') : 'kas_usaha',
         catatan: record.notes || null,
       })
       .eq('id', record.id);
@@ -2937,9 +3060,20 @@ export default function OvanaFarmDashboard() {
       { key: 'feedType', label: 'Jenis pakan', type: 'select', options: FEED_TYPE_OPTIONS, disabled: true },
       { key: 'stockKg', label: 'Stok masuk (kg)', type: 'number', min: 0.01, step: 0.1 },
       { key: 'purchaseCost', label: 'Harga pembelian total', type: 'currency' },
+      { key: 'fundSource', label: 'Sumber dana', type: 'select', options: [
+        { value: 'pribadi', label: 'Uang pribadi' },
+        { value: 'kas_usaha', label: 'Kas usaha' },
+      ] },
       { key: 'notes', label: 'Catatan', type: 'text' },
     ],
-    values: { date: record.date, feedType: record.feedType, stockKg: record.stockKg, purchaseCost: record.purchaseCost, notes: record.notes || '' },
+    values: {
+      date: record.date,
+      feedType: record.feedType,
+      stockKg: record.stockKg,
+      purchaseCost: record.purchaseCost,
+      fundSource: record.fundSource || 'pribadi',
+      notes: record.notes || '',
+    },
     onSave: (v) => {
       const stockKg = Number(v.stockKg) || 0;
       const purchaseCost = Number(v.purchaseCost) || 0;
@@ -2951,7 +3085,14 @@ export default function OvanaFarmDashboard() {
         return false;
       }
       if (stockKg <= 0 || purchaseCost <= 0) return false;
-      return updateFeedStockRecord({ ...record, date: v.date, stockKg, purchaseCost, notes: String(v.notes || '').trim() });
+      return updateFeedStockRecord({
+        ...record,
+        date: v.date,
+        stockKg,
+        purchaseCost,
+        fundSource: v.fundSource || 'pribadi',
+        notes: String(v.notes || '').trim(),
+      });
     },
   });
 
@@ -2992,13 +3133,32 @@ export default function OvanaFarmDashboard() {
       { key: 'type', label: 'Jenis', type: 'select', options: [{ value: 'income', label: 'Pemasukan' }, { value: 'expense', label: 'Pengeluaran' }] },
       { key: 'category', label: 'Kategori', type: 'select', options: record.type === 'income' ? incomeEditCategories : expenseEditCategories },
       { key: 'amount', label: 'Jumlah', type: 'currency' },
+      { key: 'fundSource', label: 'Sumber dana', type: 'select', options: [
+        { value: 'pribadi', label: 'Uang pribadi' },
+        { value: 'kas_usaha', label: 'Kas usaha' },
+      ] },
       { key: 'notes', label: 'Catatan', type: 'text' },
     ],
-    values: { date: record.date, type: record.type, category: record.category, amount: record.amount, notes: record.notes || '' },
+    values: {
+      date: record.date,
+      type: record.type,
+      category: record.category,
+      amount: record.amount,
+      fundSource: record.fundSource || (record.type === 'expense' ? 'pribadi' : 'kas_usaha'),
+      notes: record.notes || '',
+    },
     onSave: (v) => {
       const validCategories = v.type === 'income' ? incomeEditCategories : expenseEditCategories;
       const category = validCategories.includes(v.category) ? v.category : validCategories[0];
-      return updateFinanceRecord({ ...record, date: v.date, type: v.type, category, amount: Number(v.amount) || 0, notes: String(v.notes || '').trim() });
+      return updateFinanceRecord({
+        ...record,
+        date: v.date,
+        type: v.type,
+        category,
+        amount: Number(v.amount) || 0,
+        fundSource: v.type === 'expense' ? (v.fundSource || 'pribadi') : 'kas_usaha',
+        notes: String(v.notes || '').trim(),
+      });
     },
   });
 
@@ -3054,7 +3214,11 @@ export default function OvanaFarmDashboard() {
 
     const balanceThisMonth = data.finance
       .filter((r) => isThisMonth(r.date))
-      .reduce((s, r) => s + (r.type === 'income' ? r.amount : -r.amount), 0);
+      .reduce((s, r) => {
+        if (r.type === 'income') return s + (Number(r.amount) || 0);
+        if (r.fundSource === 'kas_usaha') return s - (Number(r.amount) || 0);
+        return s;
+      }, 0);
 
     return {
       eggRevenueThisMonth,
@@ -3185,7 +3349,7 @@ export default function OvanaFarmDashboard() {
             icon={Wallet}
             label="Saldo kas bulan ini"
             value={idr(kpis.balanceThisMonth)}
-            sub={kpis.balanceThisMonth >= 0 ? 'Surplus' : 'Defisit'}
+            sub="Pengeluaran pribadi tidak mengurangi kas" 
             accent={kpis.balanceThisMonth >= 0 ? C.sage : C.rust}
           />
         </div>
