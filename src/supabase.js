@@ -5,5 +5,13 @@ const supabaseKey = 'sb_publishable_5dQRwThjCNLnL-Zsr6Jbig_bA3OrGf6'
 
 export const supabase = createClient(
   supabaseUrl,
-  supabaseKey
+  supabaseKey,
+  {
+    auth: {
+      storageKey: 'ovana-kandang-auth',
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true,
+    },
+  }
 )
