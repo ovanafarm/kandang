@@ -778,7 +778,7 @@ export default function OvanaFarmDashboard() {
 
     (async () => {
       try {
-        const [eggResult, feedResult, health, finance, s, p] = await Promise.all([
+        const [eggResult, feedResult, healthResult, financeResult, s, p] = await Promise.all([
           supabase
             .from('kandang_telur')
             .select('id, tanggal, grade_a, grade_b, retak')
@@ -787,14 +787,22 @@ export default function OvanaFarmDashboard() {
             .from('kandang_pakan')
             .select('id, tanggal, jenis_pakan, pakan_kg, air_liter')
             .order('tanggal', { ascending: true }),
-          loadList(STORAGE_KEYS.health),
-          loadList(STORAGE_KEYS.finance),
+          supabase
+            .from('kandang_kesehatan')
+            .select('id, tanggal, sakit, mati, vaksinasi, catatan')
+            .order('tanggal', { ascending: true }),
+          supabase
+            .from('kandang_keuangan')
+            .select('id, tanggal, jenis, kategori, nominal, catatan')
+            .order('tanggal', { ascending: true }),
           loadSettings(),
           loadProject(),
         ]);
 
         if (eggResult.error) throw eggResult.error;
         if (feedResult.error) throw feedResult.error;
+        if (healthResult.error) throw healthResult.error;
+        if (financeResult.error) throw financeResult.error;
 
         const eggs = (eggResult.data || []).map((r) => ({
           id: r.id,
@@ -810,6 +818,24 @@ export default function OvanaFarmDashboard() {
           feedType: r.jenis_pakan,
           feedKg: Number(r.pakan_kg),
           waterLiter: Number(r.air_liter),
+        }));
+
+        const health = (healthResult.data || []).map((r) => ({
+          id: r.id,
+          date: r.tanggal,
+          sick: Number(r.sakit),
+          death: Number(r.mati),
+          vaccinated: Boolean(r.vaksinasi),
+          notes: r.catatan || '',
+        }));
+
+        const finance = (financeResult.data || []).map((r) => ({
+          id: r.id,
+          date: r.tanggal,
+          type: r.jenis,
+          category: r.kategori,
+          amount: Number(r.nominal),
+          notes: r.catatan || '',
         }));
 
         if (!mounted) return;
@@ -938,6 +964,111 @@ export default function OvanaFarmDashboard() {
     setData((prev) => ({
       ...prev,
       feed: prev.feed.filter((r) => r.id !== id),
+    }));
+  };
+
+
+  const addHealthRecord = async (record) => {
+    const { data: inserted, error } = await supabase
+      .from('kandang_kesehatan')
+      .insert({
+        tanggal: record.date,
+        sakit: record.sick,
+        mati: record.death,
+        vaksinasi: record.vaccinated,
+        catatan: record.notes,
+      })
+      .select('id, tanggal, sakit, mati, vaksinasi, catatan')
+      .single();
+
+    if (error) {
+      console.error('Gagal menyimpan kesehatan:', error);
+      alert('Gagal menyimpan data kesehatan.');
+      return;
+    }
+
+    const newRecord = {
+      id: inserted.id,
+      date: inserted.tanggal,
+      sick: Number(inserted.sakit),
+      death: Number(inserted.mati),
+      vaccinated: Boolean(inserted.vaksinasi),
+      notes: inserted.catatan || '',
+    };
+
+    setData((prev) => ({
+      ...prev,
+      health: [...prev.health, newRecord],
+    }));
+  };
+
+  const deleteHealthRecord = async (id) => {
+    const { error } = await supabase
+      .from('kandang_kesehatan')
+      .delete()
+      .eq('id', id);
+
+    if (error) {
+      console.error('Gagal menghapus kesehatan:', error);
+      alert('Gagal menghapus data kesehatan.');
+      return;
+    }
+
+    setData((prev) => ({
+      ...prev,
+      health: prev.health.filter((r) => r.id !== id),
+    }));
+  };
+
+  const addFinanceRecord = async (record) => {
+    const { data: inserted, error } = await supabase
+      .from('kandang_keuangan')
+      .insert({
+        tanggal: record.date,
+        jenis: record.type,
+        kategori: record.category,
+        nominal: record.amount,
+        catatan: record.notes,
+      })
+      .select('id, tanggal, jenis, kategori, nominal, catatan')
+      .single();
+
+    if (error) {
+      console.error('Gagal menyimpan keuangan:', error);
+      alert('Gagal menyimpan data keuangan.');
+      return;
+    }
+
+    const newRecord = {
+      id: inserted.id,
+      date: inserted.tanggal,
+      type: inserted.jenis,
+      category: inserted.kategori,
+      amount: Number(inserted.nominal),
+      notes: inserted.catatan || '',
+    };
+
+    setData((prev) => ({
+      ...prev,
+      finance: [...prev.finance, newRecord],
+    }));
+  };
+
+  const deleteFinanceRecord = async (id) => {
+    const { error } = await supabase
+      .from('kandang_keuangan')
+      .delete()
+      .eq('id', id);
+
+    if (error) {
+      console.error('Gagal menghapus keuangan:', error);
+      alert('Gagal menghapus data keuangan.');
+      return;
+    }
+
+    setData((prev) => ({
+      ...prev,
+      finance: prev.finance.filter((r) => r.id !== id),
     }));
   };
 
@@ -1075,10 +1206,18 @@ export default function OvanaFarmDashboard() {
           />
         )}
         {tab === 'health' && (
-          <HealthTab records={data.health} onAdd={addRecord('health')} onDelete={deleteRecord('health')} />
+          <HealthTab
+            records={data.health}
+            onAdd={addHealthRecord}
+            onDelete={deleteHealthRecord}
+          />
         )}
         {tab === 'finance' && (
-          <FinanceTab records={data.finance} onAdd={addRecord('finance')} onDelete={deleteRecord('finance')} />
+          <FinanceTab
+            records={data.finance}
+            onAdd={addFinanceRecord}
+            onDelete={deleteFinanceRecord}
+          />
         )}
         {tab === 'project' && (
           <ProjectTab project={project} onChange={updateProject} />
