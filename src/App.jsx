@@ -479,7 +479,7 @@ function FinanceTab({ records, onAdd, onDelete }) {
   }, [records]);
 
   const incomeCategories = ['Penjualan telur', 'Penjualan ayam afkir', 'Lainnya'];
-  const expenseCategories = ['Pakan', 'Obat & vitamin', 'Listrik/air', 'Tenaga kerja', 'Perbaikan kandang', 'Lainnya'];
+  const expenseCategories = ['Pembuatan/renovasi kandang', 'Pembelian ayam', 'Peralatan', 'Pakan', 'Obat & vitamin', 'Listrik/air', 'Tenaga kerja', 'Transportasi', 'Perbaikan kandang', 'Lainnya'];
 
   const submit = (e) => {
     e.preventDefault();
@@ -577,121 +577,169 @@ function FinanceTab({ records, onAdd, onDelete }) {
 /* ---------------------------------------------------------------
    Tab: Proyeksi Usaha
 ------------------------------------------------------------------*/
-function ProjectTab({ project, onChange }) {
-  const n = (key) => Math.max(0, Number(project[key]) || 0);
-  const cageCapacity = n('cageCapacity');
-  const cageCost = n('cageCost');
-  const chickenCount = n('chickenCount');
-  const chickenPrice = n('chickenPrice');
-  const equipmentCost = n('equipmentCost');
-  const feedPrice = n('feedPrice');
-  const daysPerMonth = n('daysPerMonth');
-  const feedPerBird = n('feedPerBird');
-  const eggPrice = n('eggPrice');
-  const layRate = Math.min(100, n('layRatePercent')) / 100;
-  const eggsPerKg = Math.max(1, n('eggsPerKg'));
+function ProjectTab({ finance, settings }) {
+  const startDate = settings.startDate || '';
+  const today = todayISO();
+  const capitalCategories = new Set([
+    'Pembuatan/renovasi kandang',
+    'Pembelian ayam',
+    'Peralatan',
+  ]);
 
-  const chickenInvestment = chickenCount * chickenPrice;
-  const dailyFeedCost = feedPerBird * chickenCount * feedPrice;
-  const monthlyFeedCost = dailyFeedCost * daysPerMonth;
-  const dailyEggCount = chickenCount * layRate;
-  const dailyEggKg = dailyEggCount / eggsPerKg;
-  const dailyRevenue = dailyEggKg * eggPrice;
-  const dailyProfit = dailyRevenue - dailyFeedCost;
-  const monthlyProfit = dailyProfit * daysPerMonth;
-  const initialInvestment = cageCost + chickenInvestment + equipmentCost + monthlyFeedCost;
-
-  const projection = Array.from({ length: 12 }, (_, i) => {
-    const month = i + 1;
-    const cumulative = -initialInvestment + (monthlyProfit * month);
-    return { month: `Bulan ${month}`, monthShort: `B${month}`, profit: monthlyProfit, cumulative };
-  });
-
-  const breakEvenExact = monthlyProfit > 0 ? initialInvestment / monthlyProfit : null;
-  const breakEvenMonth = breakEvenExact ? Math.ceil(breakEvenExact) : null;
-  const yearEnd = projection[11]?.cumulative || -initialInvestment;
-  const occupancy = cageCapacity > 0 ? (chickenCount / cageCapacity) * 100 : 0;
-
-  const updateNumber = (key, value) => {
-    const parsed = Number(value);
-    onChange({ [key]: Number.isFinite(parsed) ? Math.max(0, parsed) : 0 });
+  const parseISO = (iso) => new Date(`${iso}T00:00:00`);
+  const isoDate = (date) => {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  };
+  const addDays = (iso, days) => {
+    const d = parseISO(iso);
+    d.setDate(d.getDate() + days);
+    return isoDate(d);
+  };
+  const diffDays = (from, to) => Math.max(0, Math.round((parseISO(to) - parseISO(from)) / 86400000));
+  const prettyDate = (iso) => {
+    if (!iso) return '—';
+    return parseISO(iso).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
   };
 
-  const projectInput = (key, label, opts = {}) => (
-    <Field label={label}>
-      <TextInput
-        type="number"
-        min={opts.min ?? 0}
-        max={opts.max}
-        step={opts.step ?? 1}
-        value={project[key]}
-        onChange={(e) => updateNumber(key, e.target.value)}
-        style={{ width: opts.width || 150 }}
-      />
-    </Field>
-  );
+  if (!startDate) {
+    return (
+      <SectionCard
+        title="Proyeksi usaha & BEP"
+        description="Tetapkan tanggal mulai usaha terlebih dahulu agar perhitungan BEP bisa dimulai dari hari pertama."
+      >
+        <div className="rounded-lg px-4 py-3 text-sm flex items-center gap-2"
+          style={{ background: C.amberSoft, color: C.ink }}>
+          <AlertCircle size={16} /> Isi <b>Tanggal mulai usaha</b> pada bagian atas dashboard.
+        </div>
+      </SectionCard>
+    );
+  }
+
+  const relevant = [...finance]
+    .filter((r) => r.date >= startDate && r.date <= today)
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  const totalIncome = relevant
+    .filter((r) => r.type === 'income')
+    .reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
+  const totalExpense = relevant
+    .filter((r) => r.type === 'expense')
+    .reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
+  const capitalExpense = relevant
+    .filter((r) => r.type === 'expense' && capitalCategories.has(r.category))
+    .reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
+  const operatingExpense = totalExpense - capitalExpense;
+  const currentNet = totalIncome - totalExpense;
+
+  const dailyMap = {};
+  relevant.forEach((r) => {
+    if (!dailyMap[r.date]) dailyMap[r.date] = { income: 0, expense: 0, operatingExpense: 0 };
+    const amount = Number(r.amount) || 0;
+    if (r.type === 'income') dailyMap[r.date].income += amount;
+    else {
+      dailyMap[r.date].expense += amount;
+      if (!capitalCategories.has(r.category)) dailyMap[r.date].operatingExpense += amount;
+    }
+  });
+
+  const actual = [];
+  let cumulative = 0;
+  let cursor = startDate;
+  while (cursor <= today) {
+    const row = dailyMap[cursor] || { income: 0, expense: 0, operatingExpense: 0 };
+    cumulative += row.income - row.expense;
+    actual.push({
+      date: cursor,
+      label: parseISO(cursor).toLocaleDateString('id-ID', { day: '2-digit', month: 'short' }),
+      actual: cumulative,
+      projected: null,
+    });
+    cursor = addDays(cursor, 1);
+  }
+
+  const minCumulative = actual.length ? Math.min(...actual.map((r) => r.actual)) : 0;
+  const maxCapitalAtRisk = Math.abs(Math.min(0, minCumulative));
+  const progress = currentNet >= 0
+    ? 100
+    : maxCapitalAtRisk > 0
+      ? Math.max(0, Math.min(100, ((maxCapitalAtRisk - Math.abs(currentNet)) / maxCapitalAtRisk) * 100))
+      : 0;
+
+  let actualBepDate = null;
+  let hadNegativeBefore = false;
+  for (let i = 0; i < actual.length; i += 1) {
+    if (actual[i].actual < 0) hadNegativeBefore = true;
+    if (hadNegativeBefore && actual[i].actual >= 0) {
+      const staysNonNegative = actual.slice(i).every((r) => r.actual >= 0);
+      if (staysNonNegative) {
+        actualBepDate = actual[i].date;
+        break;
+      }
+    }
+  }
+
+  const lookbackDays = Math.min(14, diffDays(startDate, today) + 1);
+  const lookbackStart = addDays(today, -(lookbackDays - 1));
+  let recentOperatingNet = 0;
+  relevant.forEach((r) => {
+    if (r.date < lookbackStart || r.date > today) return;
+    const amount = Number(r.amount) || 0;
+    if (r.type === 'income') recentOperatingNet += amount;
+    else if (!capitalCategories.has(r.category)) recentOperatingNet -= amount;
+  });
+  const avgDailyOperatingNet = lookbackDays > 0 ? recentOperatingNet / lookbackDays : 0;
+
+  let estimatedBepDate = null;
+  let daysToBep = null;
+  if (!actualBepDate && currentNet < 0 && avgDailyOperatingNet > 0) {
+    daysToBep = Math.ceil(Math.abs(currentNet) / avgDailyOperatingNet);
+    estimatedBepDate = addDays(today, daysToBep);
+  }
+
+  const chartData = [...actual];
+  if (estimatedBepDate && daysToBep != null) {
+    if (chartData.length) chartData[chartData.length - 1].projected = currentNet;
+    const cappedDays = Math.min(daysToBep, 730);
+    for (let i = 1; i <= cappedDays; i += 1) {
+      const d = addDays(today, i);
+      chartData.push({
+        date: d,
+        label: parseISO(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'short' }),
+        actual: null,
+        projected: currentNet + (avgDailyOperatingNet * i),
+      });
+    }
+  }
+
+  const daysRunning = diffDays(startDate, today) + 1;
+  const statusLabel = actualBepDate
+    ? 'BEP tercapai'
+    : estimatedBepDate
+      ? prettyDate(estimatedBepDate)
+      : 'Belum dapat diproyeksikan';
+  const statusSub = actualBepDate
+    ? `${diffDays(startDate, actualBepDate) + 1} hari sejak mulai usaha`
+    : estimatedBepDate
+      ? `± ${daysToBep} hari lagi, berdasar kas operasional ${lookbackDays} hari terakhir`
+      : currentNet >= 0
+        ? 'Posisi kas sudah non-negatif, tetapi histori belum menunjukkan crossing BEP yang stabil.'
+        : 'Perlu rata-rata kas operasional harian yang positif.';
 
   return (
     <div className="flex flex-col gap-6">
       <SectionCard
-        title="Asumsi proyeksi usaha"
-        description="Kalkulator ini mengikuti struktur Project.xlsx. Ubah asumsi untuk melihat dampaknya terhadap profit dan waktu balik modal."
+        title="Proyeksi usaha & BEP"
+        description="Dihitung otomatis dari seluruh pemasukan dan pengeluaran sejak tanggal mulai usaha. Pengeluaran modal satu kali dipisahkan dari biaya operasional agar estimasi BEP tidak bias."
       >
-        <div className="flex flex-col gap-5">
-          <div>
-            <div className="text-xs font-bold uppercase tracking-wide mb-2" style={{ color: C.green }}>Investasi & kapasitas</div>
-            <div className="flex flex-wrap gap-3">
-              {projectInput('cageCapacity', 'Kapasitas kandang (ekor)')}
-              {projectInput('cageCost', 'Biaya kandang (Rp)', { step: 50000, width: 170 })}
-              {projectInput('chickenCount', 'Jumlah ayam proyeksi (ekor)')}
-              {projectInput('chickenPrice', 'Harga ayam / ekor (Rp)', { step: 5000, width: 170 })}
-              {projectInput('equipmentCost', 'Peralatan penunjang (Rp)', { step: 50000, width: 180 })}
-            </div>
-          </div>
-
-          <div>
-            <div className="text-xs font-bold uppercase tracking-wide mb-2" style={{ color: C.green }}>Operasional & produksi</div>
-            <div className="flex flex-wrap gap-3">
-              {projectInput('feedPrice', 'Harga pakan / kg (Rp)', { step: 500, width: 165 })}
-              {projectInput('feedPerBird', 'Pakan / ekor / hari (kg)', { step: 0.01, width: 170 })}
-              {projectInput('daysPerMonth', 'Hari operasional / bulan', { max: 31, width: 160 })}
-              {projectInput('eggPrice', 'Harga telur / kg (Rp)', { step: 500, width: 165 })}
-              {projectInput('layRatePercent', 'Target produksi / hari (%)', { step: 1, max: 100, width: 170 })}
-              {projectInput('eggsPerKg', 'Konversi telur / kg (butir)', { step: 1, min: 1, width: 170 })}
-            </div>
-          </div>
-
-          {chickenCount > cageCapacity && cageCapacity > 0 && (
-            <div className="rounded-lg px-3 py-2 text-xs flex items-center gap-2"
-              style={{ background: C.rustSoft, color: C.rust }}>
-              <AlertCircle size={14} /> Jumlah ayam proyeksi melebihi kapasitas kandang ({occupancy.toFixed(0)}% terisi).
-            </div>
-          )}
-        </div>
-      </SectionCard>
-
-      <div className="flex flex-wrap gap-3">
-        <KpiCard icon={Wallet} label="Investasi awal" value={idr(initialInvestment)}
-          sub={`Termasuk stok pakan ${daysPerMonth || 0} hari`} accent={C.amberDeep} />
-        <KpiCard icon={ArrowUpCircle} label="Profit / bulan" value={idr(monthlyProfit)}
-          sub={monthlyProfit >= 0 ? `${idr(dailyProfit)} / hari` : 'Asumsi saat ini masih rugi'}
-          accent={monthlyProfit >= 0 ? C.sage : C.rust} />
-        <KpiCard icon={Calculator} label="Estimasi BEP"
-          value={breakEvenMonth ? `Bulan ${breakEvenMonth}` : 'Belum tercapai'}
-          sub={breakEvenExact ? `${breakEvenExact.toFixed(1)} bulan secara matematis` : 'Profit bulanan harus positif'}
-          accent={breakEvenMonth && breakEvenMonth <= 12 ? C.green : C.amberDeep} />
-        <KpiCard icon={Egg} label="Kumulatif bulan 12" value={idr(yearEnd)}
-          sub={yearEnd >= 0 ? 'Sudah menutup investasi awal' : 'Belum menutup investasi awal'}
-          accent={yearEnd >= 0 ? C.sage : C.rust} />
-      </div>
-
-      <SectionCard title="Ringkasan operasional" description="Perhitungan harian berdasarkan asumsi yang dipilih.">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {[
-            ['Produksi telur', `${dailyEggCount.toFixed(1)} butir/hari`],
-            ['Setara berat', `${dailyEggKg.toFixed(2)} kg/hari`],
-            ['Biaya pakan', idr(dailyFeedCost) + '/hari'],
-            ['Pendapatan telur', idr(dailyRevenue) + '/hari'],
+            ['Mulai usaha', prettyDate(startDate)],
+            ['Hari berjalan', `${daysRunning} hari`],
+            ['Modal/investasi tercatat', idr(capitalExpense)],
+            ['Biaya operasional', idr(operatingExpense)],
           ].map(([label, value]) => (
             <div key={label} className="rounded-lg p-3" style={{ background: C.panelAlt, border: `1px solid ${C.border}` }}>
               <div className="text-xs" style={{ color: C.inkSoft }}>{label}</div>
@@ -701,53 +749,66 @@ function ProjectTab({ project, onChange }) {
         </div>
       </SectionCard>
 
-      <SectionCard title="Proyeksi kumulatif 12 bulan" description="Garis nol menunjukkan titik saat investasi awal sudah tertutup.">
-        <div style={{ height: 260 }}>
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={projection} margin={{ left: 5, right: 12, top: 8 }}>
-              <CartesianGrid stroke={C.border} vertical={false} />
-              <XAxis dataKey="monthShort" tick={{ fontSize: 11, fill: C.inkSoft }} axisLine={{ stroke: C.border }} tickLine={false} />
-              <YAxis tick={{ fontSize: 11, fill: C.inkSoft }} axisLine={false} tickLine={false}
-                tickFormatter={(v) => `${Math.round(v / 1000000 * 10) / 10} jt`} />
-              <Tooltip contentStyle={chartTooltipStyle} labelStyle={{ color: '#fff' }} formatter={(v) => idr(v)} />
-              <ReferenceLine y={0} stroke={C.amberDeep} strokeDasharray="4 4" />
-              <Line type="monotone" dataKey="cumulative" stroke={C.green} strokeWidth={3}
-                dot={{ r: 3, fill: C.green }} activeDot={{ r: 5 }} name="Kumulatif" />
-            </LineChart>
-          </ResponsiveContainer>
+      <div className="flex flex-wrap gap-3">
+        <KpiCard icon={ArrowUpCircle} label="Pemasukan sejak awal" value={idr(totalIncome)} accent={C.sage} />
+        <KpiCard icon={ArrowDownCircle} label="Pengeluaran sejak awal" value={idr(totalExpense)} accent={C.rust} />
+        <KpiCard icon={Wallet} label="Laba/rugi kas saat ini" value={idr(currentNet)}
+          sub={currentNet >= 0 ? 'Kas kumulatif non-negatif' : `Masih kurang ${idr(Math.abs(currentNet))} menuju Rp 0`}
+          accent={currentNet >= 0 ? C.sage : C.rust} />
+        <KpiCard icon={Calculator} label={actualBepDate ? 'Tanggal BEP aktual' : 'Estimasi tanggal BEP'}
+          value={actualBepDate ? prettyDate(actualBepDate) : statusLabel}
+          sub={statusSub}
+          accent={actualBepDate ? C.green : C.amberDeep} />
+      </div>
+
+      <SectionCard title="Progress menuju BEP" description="BEP di sini adalah titik ketika arus kas kumulatif sejak awal kembali ke Rp 0 atau positif.">
+        <div className="flex items-center justify-between gap-4 mb-2">
+          <div className="text-sm" style={{ color: C.inkSoft }}>
+            {actualBepDate ? 'BEP sudah tercapai' : `Progress ${progress.toFixed(1)}%`}
+          </div>
+          <div className="text-sm font-bold" style={{ color: currentNet >= 0 ? C.sage : C.rust }}>
+            {idr(currentNet)}
+          </div>
         </div>
+        <div className="w-full h-3 rounded-full overflow-hidden" style={{ background: C.border }}>
+          <div className="h-full rounded-full transition-all" style={{ width: `${progress}%`, background: C.green }} />
+        </div>
+        {!actualBepDate && currentNet < 0 && (
+          <div className="text-xs mt-2" style={{ color: C.inkSoft }}>
+            Rata-rata kas operasional {lookbackDays} hari terakhir: <b>{idr(avgDailyOperatingNet)} / hari</b>.
+          </div>
+        )}
       </SectionCard>
 
-      <SectionCard title="Detail profit & kumulatif">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm border-collapse">
-            <thead>
-              <tr style={{ color: C.inkSoft }}>
-                <th className="text-left py-2 pr-4 font-semibold">Periode</th>
-                <th className="text-right py-2 px-4 font-semibold">Profit</th>
-                <th className="text-right py-2 px-4 font-semibold">Kumulatif</th>
-                <th className="text-right py-2 pl-4 font-semibold">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr style={{ borderTop: `1px solid ${C.border}` }}>
-                <td className="py-2.5 pr-4 font-medium">Investasi awal</td>
-                <td className="text-right py-2.5 px-4" style={{ color: C.inkSoft }}>—</td>
-                <td className="text-right py-2.5 px-4 font-semibold" style={{ color: C.rust }}>{idr(-initialInvestment)}</td>
-                <td className="text-right py-2.5 pl-4 text-xs" style={{ color: C.inkSoft }}>Modal awal</td>
-              </tr>
-              {projection.map((row) => (
-                <tr key={row.month} style={{ borderTop: `1px solid ${C.border}` }}>
-                  <td className="py-2.5 pr-4 font-medium">{row.month}</td>
-                  <td className="text-right py-2.5 px-4" style={{ color: monthlyProfit >= 0 ? C.sage : C.rust }}>{idr(row.profit)}</td>
-                  <td className="text-right py-2.5 px-4 font-semibold" style={{ color: row.cumulative >= 0 ? C.sage : C.rust }}>{idr(row.cumulative)}</td>
-                  <td className="text-right py-2.5 pl-4 text-xs" style={{ color: row.cumulative >= 0 ? C.sage : C.inkSoft }}>
-                    {row.cumulative >= 0 ? 'Balik modal' : 'Belum BEP'}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      <SectionCard title="Perjalanan kas menuju BEP" description="Garis solid = aktual. Garis proyeksi memakai rata-rata kas operasional terbaru dan tidak memasukkan kembali biaya modal satu kali.">
+        {chartData.length === 0 ? <EmptyRow text="Belum ada transaksi keuangan sejak tanggal mulai usaha." /> : (
+          <div style={{ height: 280 }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={chartData} margin={{ left: 5, right: 12, top: 8 }}>
+                <CartesianGrid stroke={C.border} vertical={false} />
+                <XAxis dataKey="label" tick={{ fontSize: 10, fill: C.inkSoft }} axisLine={{ stroke: C.border }} tickLine={false}
+                  minTickGap={24} />
+                <YAxis tick={{ fontSize: 11, fill: C.inkSoft }} axisLine={false} tickLine={false}
+                  tickFormatter={(v) => `${Math.round(v / 1000000 * 10) / 10} jt`} />
+                <Tooltip contentStyle={chartTooltipStyle} labelStyle={{ color: '#fff' }} formatter={(v) => idr(v)} />
+                <ReferenceLine y={0} stroke={C.amberDeep} strokeDasharray="4 4" />
+                <Line type="monotone" dataKey="actual" stroke={C.green} strokeWidth={3}
+                  dot={false} activeDot={{ r: 4 }} name="Aktual" connectNulls={false} />
+                {estimatedBepDate && (
+                  <Line type="monotone" dataKey="projected" stroke={C.amberDeep} strokeWidth={2}
+                    strokeDasharray="6 4" dot={false} activeDot={{ r: 4 }} name="Proyeksi" connectNulls={false} />
+                )}
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+      </SectionCard>
+
+      <SectionCard title="Cara membaca angka" description="Agar hasil BEP akurat, masukkan transaksi lama menggunakan tanggal transaksi sebenarnya.">
+        <div className="text-sm leading-6" style={{ color: C.inkSoft }}>
+          Pengeluaran kategori <b>Pembuatan/renovasi kandang, Pembelian ayam, dan Peralatan</b> dianggap sebagai investasi/modal satu kali.
+          Pakan, obat, listrik/air, tenaga kerja, transportasi, perbaikan kandang, dan lainnya dianggap biaya operasional.
+          Estimasi hari-H BEP akan bergerak otomatis setiap ada transaksi baru.
         </div>
       </SectionCard>
     </div>
@@ -769,8 +830,7 @@ export default function OvanaFarmDashboard() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
   const [tab, setTab] = useState('eggs');
-  const [settings, setSettings] = useState({ flockSize: 0, farmName: 'Ovana Farm' });
-  const [project, setProject] = useState(DEFAULT_PROJECT);
+  const [settings, setSettings] = useState({ flockSize: 0, farmName: 'Ovana Farm', startDate: '' });
   const [data, setData] = useState({ eggs: [], feed: [], health: [], finance: [] });
 
   useEffect(() => {
@@ -778,7 +838,7 @@ export default function OvanaFarmDashboard() {
 
     (async () => {
       try {
-        const [eggResult, feedResult, healthResult, financeResult, settingResult, p] = await Promise.all([
+        const [eggResult, feedResult, healthResult, financeResult, settingResult] = await Promise.all([
           supabase
             .from('kandang_telur')
             .select('id, tanggal, grade_a, grade_b, retak')
@@ -797,9 +857,8 @@ export default function OvanaFarmDashboard() {
             .order('tanggal', { ascending: true }),
           supabase
             .from('kandang_setting')
-            .select('nama_farm, jumlah_ayam')
+            .select('nama_farm, jumlah_ayam, tanggal_mulai')
             .maybeSingle(),
-          loadProject(),
         ]);
 
         if (eggResult.error) throw eggResult.error;
@@ -846,14 +905,14 @@ export default function OvanaFarmDashboard() {
           ? {
               farmName: settingResult.data.nama_farm || 'Ovana Farm',
               flockSize: Number(settingResult.data.jumlah_ayam) || 0,
+              startDate: settingResult.data.tanggal_mulai || '',
             }
-          : { farmName: 'Ovana Farm', flockSize: 0 };
+          : { farmName: 'Ovana Farm', flockSize: 0, startDate: '' };
 
         if (!mounted) return;
 
         setData({ eggs, feed, health, finance });
         setSettings(farmSettings);
-        setProject(p);
       } catch (e) {
         console.error('Gagal memuat data:', e);
         setLoadError(true);
@@ -1083,14 +1142,14 @@ export default function OvanaFarmDashboard() {
     }));
   };
 
-  const updateFlockSize = async (val) => {
-    const next = { ...settings, flockSize: Number(val) || 0 };
+  const updateFarmSettings = async (patch) => {
+    const next = { ...settings, ...patch };
     setSettings(next);
 
     const { data: authData, error: authError } = await supabase.auth.getUser();
     if (authError || !authData?.user) {
       console.error('Gagal membaca user untuk pengaturan farm:', authError);
-      alert('Gagal menyimpan jumlah ayam. Silakan login ulang.');
+      alert('Gagal menyimpan pengaturan farm. Silakan login ulang.');
       return;
     }
 
@@ -1100,24 +1159,20 @@ export default function OvanaFarmDashboard() {
         {
           user_id: authData.user.id,
           nama_farm: next.farmName || 'Ovana Farm',
-          jumlah_ayam: next.flockSize,
+          jumlah_ayam: Number(next.flockSize) || 0,
+          tanggal_mulai: next.startDate || null,
         },
         { onConflict: 'user_id' }
       );
 
     if (error) {
       console.error('Gagal menyimpan pengaturan farm:', error);
-      alert('Gagal menyimpan jumlah ayam.');
+      alert('Gagal menyimpan pengaturan farm.');
     }
   };
 
-  const updateProject = (patch) => {
-    setProject((prev) => {
-      const next = { ...prev, ...patch };
-      saveProject(next);
-      return next;
-    });
-  };
+  const updateFlockSize = (val) => updateFarmSettings({ flockSize: Number(val) || 0 });
+  const updateStartDate = (val) => updateFarmSettings({ startDate: val });
 
   const kpis = useMemo(() => {
     const eggsSorted = [...data.eggs].sort((a, b) => a.date.localeCompare(b.date));
@@ -1172,15 +1227,27 @@ export default function OvanaFarmDashboard() {
               </div>
             </div>
           </div>
-          <div className="flex items-center gap-2 text-sm font-semibold" style={{ color: C.ink }}>
-            <span>Jumlah ayam:</span>
-            <TextInput
-              type="number" min="0" placeholder="mis. 500"
-              value={settings.flockSize || ''}
-              onChange={(e) => updateFlockSize(e.target.value)}
-              style={{ width: 100, background: '#FFFFFF', border: `1px solid ${C.greenSoft}`, color: C.ink }}
-            />
-            <span>ekor</span>
+          <div className="flex flex-wrap items-end gap-3 text-sm font-semibold" style={{ color: C.ink }}>
+            <Field label="Tanggal mulai usaha">
+              <TextInput
+                type="date"
+                value={settings.startDate || ''}
+                max={todayISO()}
+                onChange={(e) => updateStartDate(e.target.value)}
+                style={{ width: 155, background: '#FFFFFF', border: `1px solid ${C.greenSoft}`, color: C.ink }}
+              />
+            </Field>
+            <Field label="Jumlah ayam">
+              <div className="flex items-center gap-2">
+                <TextInput
+                  type="number" min="0" placeholder="mis. 500"
+                  value={settings.flockSize || ''}
+                  onChange={(e) => updateFlockSize(e.target.value)}
+                  style={{ width: 100, background: '#FFFFFF', border: `1px solid ${C.greenSoft}`, color: C.ink }}
+                />
+                <span>ekor</span>
+              </div>
+            </Field>
           </div>
         </div>
 
@@ -1253,7 +1320,7 @@ export default function OvanaFarmDashboard() {
           />
         )}
         {tab === 'project' && (
-          <ProjectTab project={project} onChange={updateProject} />
+          <ProjectTab finance={data.finance} settings={settings} />
         )}
       </div>
     </div>
