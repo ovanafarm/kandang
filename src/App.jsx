@@ -188,7 +188,7 @@ function Select(props) {
 function KpiCard({ icon: Icon, label, value, sub, accent }) {
   return (
     <div
-      className="w-full min-w-0 rounded-xl p-3 sm:p-4 flex flex-col gap-2"
+      className="ovana-kpi-card w-full min-w-0 rounded-xl p-3 sm:p-4 flex flex-col gap-2"
       style={{ background: C.panel, border: `1px solid ${C.border}` }}
     >
       <div className="flex items-center gap-2">
@@ -198,12 +198,12 @@ function KpiCard({ icon: Icon, label, value, sub, accent }) {
         >
           <Icon size={16} color={accent} />
         </div>
-        <span className="text-xs" style={{ color: C.inkSoft }}>{label}</span>
+        <span className="ovana-kpi-label text-xs" style={{ color: C.inkSoft }}>{label}</span>
       </div>
-      <div style={{ fontFamily: FONT_HEAD, fontSize: 26, fontWeight: 600, color: C.ink }}>
+      <div className="ovana-kpi-value" style={{ fontFamily: FONT_HEAD, fontSize: 26, fontWeight: 600, color: C.ink }}>
         {value}
       </div>
-      {sub && <div className="text-xs" style={{ color: C.inkSoft }}>{sub}</div>}
+      {sub && <div className="ovana-kpi-sub text-xs" style={{ color: C.inkSoft }}>{sub}</div>}
     </div>
   );
 }
@@ -373,8 +373,8 @@ function EditModal({ editor, onChange, onClose, onSave }) {
 
 function SectionCard({ title, description, children }) {
   return (
-    <div className="rounded-xl p-4 sm:p-5 lg:p-6" style={{ background: C.panel, border: `1px solid ${C.border}` }}>
-      <div style={{ fontFamily: FONT_HEAD, fontSize: 18, fontWeight: 600, color: C.ink }}>{title}</div>
+    <div className="ovana-section-card rounded-xl p-4 sm:p-5 lg:p-6" style={{ background: C.panel, border: `1px solid ${C.border}` }}>
+      <div className="ovana-section-title" style={{ fontFamily: FONT_HEAD, fontSize: 18, fontWeight: 600, color: C.ink }}>{title}</div>
       {description && <div className="text-xs mt-1 mb-4" style={{ color: C.inkSoft }}>{description}</div>}
       <div className={description ? '' : 'mt-4'}>{children}</div>
     </div>
@@ -452,7 +452,7 @@ function EggsTab({ salesRecords, onAddSale, onDeleteSale, onEditSale }) {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+      <div className="ovana-kpi-grid grid grid-cols-2 xl:grid-cols-4 gap-2 sm:gap-3">
         <KpiCard
           icon={ArrowUpCircle}
           label="Omzet telur bulan ini"
@@ -568,7 +568,7 @@ function EggsTab({ salesRecords, onAddSale, onDeleteSale, onEditSale }) {
               return (
                 <div
                   key={r.id}
-                  className="flex items-center justify-between py-2.5 gap-3 flex-wrap"
+                  className="ovana-history-row flex items-center justify-between py-2.5 gap-3 flex-wrap"
                   style={{ borderColor: C.border }}
                 >
                   <div className="text-sm font-medium" style={{ minWidth: 100 }}>
@@ -1163,7 +1163,7 @@ function FeedTab({
             {sortedSales.map((r) => (
               <div
                 key={r.id}
-                className="flex items-center justify-between py-2.5 gap-3 flex-wrap"
+                className="ovana-history-row flex items-center justify-between py-2.5 gap-3 flex-wrap"
                 style={{ borderColor: C.border }}
               >
                 <div className="text-sm font-medium" style={{ minWidth: 100 }}>
@@ -1196,7 +1196,7 @@ function FeedTab({
             {sortedStock.map((r) => (
               <div
                 key={r.id}
-                className="flex items-center justify-between py-2.5 gap-3 flex-wrap"
+                className="ovana-history-row flex items-center justify-between py-2.5 gap-3 flex-wrap"
                 style={{ borderColor: C.border }}
               >
                 <div className="text-sm font-medium" style={{ minWidth: 100 }}>
@@ -1225,7 +1225,7 @@ function FeedTab({
             {sorted.map((r) => (
               <div
                 key={r.id}
-                className="flex items-center justify-between py-2.5 gap-3 flex-wrap"
+                className="ovana-history-row flex items-center justify-between py-2.5 gap-3 flex-wrap"
                 style={{ borderColor: C.border }}
               >
                 <div className="text-sm font-medium" style={{ minWidth: 100 }}>
@@ -1301,7 +1301,7 @@ function HealthTab({ records, onAdd, onDelete, onEdit }) {
         {sorted.length === 0 ? <EmptyRow text="Belum ada catatan kesehatan." /> : (
           <div className="flex flex-col divide-y" style={{ borderColor: C.border }}>
             {sorted.map((r) => (
-              <div key={r.id} className="flex items-center justify-between py-2.5 gap-3 flex-wrap" style={{ borderColor: C.border }}>
+              <div key={r.id} className="ovana-history-row flex items-center justify-between py-2.5 gap-3 flex-wrap" style={{ borderColor: C.border }}>
                 <div className="text-sm font-medium" style={{ minWidth: 100 }}>{fmtDate(r.date)}</div>
                 <div className="text-sm flex-1" style={{ color: C.inkSoft }}>
                   Sakit: {r.sick} · Mati: {r.death}
@@ -1447,7 +1447,7 @@ function FinanceTab({ records, onAdd, onDelete, onEdit, lockedIds }) {
         {sorted.length === 0 ? <EmptyRow text="Belum ada transaksi." /> : (
           <div className="flex flex-col divide-y" style={{ borderColor: C.border }}>
             {sorted.map((r) => (
-              <div key={r.id} className="flex items-center justify-between py-2.5 gap-3 flex-wrap" style={{ borderColor: C.border }}>
+              <div key={r.id} className="ovana-history-row flex items-center justify-between py-2.5 gap-3 flex-wrap" style={{ borderColor: C.border }}>
                 <div className="text-sm font-medium" style={{ minWidth: 100 }}>{fmtDate(r.date)}</div>
                 <div className="text-sm flex-1" style={{ color: C.inkSoft }}>
                   <span style={{ color: r.type === 'income' ? C.sage : C.rust, fontWeight: 700 }}>
@@ -1932,7 +1932,7 @@ function ProjectTab({ finance, settings, eggSales, feed, feedSales }) {
         title="Proyeksi usaha & BEP"
         description="BEP tetap dihitung dari profit operasional. Dana pribadi ditampilkan terpisah agar uang yang kamu keluarkan untuk kandang, stok pakan, dan biaya lain tetap terlihat tanpa mencampur persediaan dengan biaya profit."
       >
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+        <div className="ovana-kpi-grid grid grid-cols-2 xl:grid-cols-4 gap-2 sm:gap-3">
           {[
             ['Mulai usaha', prettyDate(startDate)],
             ['Hari berjalan', `${daysRunning} hari`],
@@ -1976,7 +1976,7 @@ function ProjectTab({ finance, settings, eggSales, feed, feedSales }) {
         </div>
       </SectionCard>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+      <div className="ovana-kpi-grid grid grid-cols-2 xl:grid-cols-4 gap-2 sm:gap-3">
         <KpiCard
           icon={ArrowUpCircle}
           label="Pemasukan usaha sejak awal"
@@ -1987,7 +1987,7 @@ function ProjectTab({ finance, settings, eggSales, feed, feedSales }) {
           icon={ArrowDownCircle}
           label="Biaya operasional terpakai"
           value={idr(totalOperatingCost)}
-          sub="bukan seluruh pembelian stok"
+          sub={`Pakan ayam ${idr(totalFeedUsageCost)} · HPP pakan terjual ${idr(totalFeedSaleCost)} · lain ${idr(totalOtherOperatingExpense)}`}
           accent={C.rust}
         />
         <KpiCard
@@ -2011,10 +2011,50 @@ function ProjectTab({ finance, settings, eggSales, feed, feedSales }) {
       </div>
 
       <SectionCard
+        title="Rincian biaya operasional terpakai"
+        description="Angka biaya operasional bukan hanya pemakaian pakan ayam. Berikut komponennya sejak usaha berjalan."
+      >
+        <div className="ovana-kpi-grid grid grid-cols-2 xl:grid-cols-4 gap-2 sm:gap-3">
+          {[
+            ['Pakan dipakai ayam', idr(totalFeedUsageCost)],
+            ['HPP pakan terjual', idr(totalFeedSaleCost)],
+            ['Biaya operasional lain', idr(totalOtherOperatingExpense)],
+            ['Total biaya operasional', idr(totalOperatingCost)],
+          ].map(([label, value]) => (
+            <div
+              key={label}
+              className="rounded-lg p-3"
+              style={{
+                background: C.panelAlt,
+                border: `1px solid ${C.border}`,
+              }}
+            >
+              <div className="text-xs" style={{ color: C.inkSoft }}>
+                {label}
+              </div>
+              <div
+                className="text-sm font-bold mt-1"
+                style={{ color: C.ink }}
+              >
+                {value}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="text-xs mt-3" style={{ color: C.inkSoft }}>
+          Pembelian stok pakan <b>tidak dihitung lagi seluruhnya sebagai biaya profit</b>.
+          Nilai pembelian tetap tercatat sebagai dana pribadi/kas yang keluar saat membeli,
+          sedangkan pada perhitungan profit hanya bagian stok yang sudah dipakai ayam atau
+          sudah terjual yang menjadi biaya.
+        </div>
+      </SectionCard>
+
+      <SectionCard
         title={`Performa ${lookbackDays} hari terakhir`}
         description="Profit dihitung dari pemasukan usaha dikurangi biaya yang benar-benar terpakai/terjual. Penjualan yang hanya terjadi tiap 2–3 hari tetap dirata-ratakan ke seluruh periode."
       >
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+        <div className="ovana-kpi-grid grid grid-cols-2 xl:grid-cols-4 gap-2 sm:gap-3">
           {[
             ['Penjualan telur', idr(recentEggRevenue)],
             ['Penjualan pakan', idr(recentFeedSaleRevenue)],
@@ -3306,15 +3346,116 @@ export default function OvanaFarmDashboard() {
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Nunito:wght@400;600;700;800&display=swap');
         * { box-sizing: border-box; }
+        html, body, #root { width: 100%; max-width: 100%; overflow-x: hidden; }
         input[type="date"]::-webkit-calendar-picker-indicator { opacity: 0.6; }
         .ovana-tabs { scrollbar-width: none; }
         .ovana-tabs::-webkit-scrollbar { display: none; }
+
         @media (max-width: 639px) {
-          .ovana-mobile-full form { display: grid !important; grid-template-columns: 1fr !important; }
+          /* Header lebih ringkas di HP */
+          .ovana-header-row { gap: 14px !important; }
+          .ovana-brand-row { align-items: center !important; }
+          .ovana-header-settings { gap: 8px !important; }
+          .ovana-header-settings label { font-size: 12px !important; }
+          .ovana-header-settings input { min-height: 40px !important; }
+
+          /* KPI dibuat 2 kolom supaya tidak terlalu memanjang ke bawah */
+          .ovana-kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+          .ovana-kpi-card {
+            padding: 12px !important;
+            gap: 6px !important;
+            min-height: 122px;
+            border-radius: 14px !important;
+          }
+          .ovana-kpi-card > div:first-child { gap: 6px !important; align-items: flex-start !important; }
+          .ovana-kpi-card > div:first-child > div { padding: 5px !important; flex: 0 0 auto; }
+          .ovana-kpi-card svg { width: 15px !important; height: 15px !important; }
+          .ovana-kpi-label { font-size: 11px !important; line-height: 1.25 !important; }
+          .ovana-kpi-value {
+            font-size: 21px !important;
+            line-height: 1.08 !important;
+            overflow-wrap: anywhere;
+          }
+          .ovana-kpi-sub { font-size: 10px !important; line-height: 1.3 !important; }
+
+          /* Semua menu terlihat tanpa harus menggeser horizontal */
+          .ovana-tabs {
+            display: grid !important;
+            grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+            gap: 5px !important;
+            overflow: visible !important;
+            width: 100% !important;
+            padding: 6px !important;
+          }
+          .ovana-tabs button {
+            width: 100% !important;
+            min-width: 0 !important;
+            padding: 8px 5px !important;
+            font-size: 11px !important;
+            line-height: 1.15 !important;
+            white-space: normal !important;
+          }
+          .ovana-tabs button svg { flex: 0 0 auto; width: 14px; height: 14px; }
+
+          /* Konten dan form benar-benar muat layar */
+          .ovana-mobile-full { padding-left: 12px !important; padding-right: 12px !important; padding-top: 16px !important; }
+          .ovana-mobile-full form {
+            display: grid !important;
+            grid-template-columns: 1fr !important;
+            gap: 10px !important;
+          }
           .ovana-mobile-full form > * { width: 100% !important; min-width: 0 !important; }
           .ovana-mobile-full form input,
-          .ovana-mobile-full form select { width: 100% !important; min-width: 0 !important; }
-          .ovana-mobile-full form button { width: 100% !important; justify-content: center !important; }
+          .ovana-mobile-full form select {
+            width: 100% !important;
+            min-width: 0 !important;
+            min-height: 42px !important;
+            font-size: 14px !important;
+          }
+          .ovana-mobile-full form button {
+            width: 100% !important;
+            min-height: 42px !important;
+            justify-content: center !important;
+          }
+
+          .ovana-section-card { padding: 14px !important; border-radius: 14px !important; }
+          .ovana-section-title { font-size: 16px !important; line-height: 1.2 !important; }
+
+          /* Riwayat: tanggal + tombol di atas, detail transaksi di bawah */
+          .ovana-history-row {
+            display: grid !important;
+            grid-template-columns: minmax(0, 1fr) auto !important;
+            align-items: start !important;
+            column-gap: 8px !important;
+            row-gap: 5px !important;
+            padding-top: 11px !important;
+            padding-bottom: 11px !important;
+          }
+          .ovana-history-row > :nth-child(2) {
+            grid-column: 1 / -1 !important;
+            grid-row: 2 !important;
+            min-width: 0 !important;
+            font-size: 12px !important;
+            line-height: 1.45 !important;
+            overflow-wrap: anywhere;
+          }
+          .ovana-history-row > :last-child:not(:nth-child(2)) {
+            grid-column: 2 !important;
+            grid-row: 1 !important;
+          }
+
+          /* Dialog aman di layar kecil */
+          .fixed.inset-0 > .max-w-sm,
+          .fixed.inset-0 > .max-w-xl {
+            max-width: calc(100vw - 24px) !important;
+            padding: 16px !important;
+          }
+        }
+
+        @media (max-width: 359px) {
+          .ovana-kpi-value { font-size: 19px !important; }
+          .ovana-kpi-label { font-size: 10px !important; }
+          .ovana-tabs button { font-size: 10px !important; padding: 7px 3px !important; }
         }
       `}</style>
 
@@ -3325,9 +3466,9 @@ export default function OvanaFarmDashboard() {
       )}
 
       {/* Header */}
-      <div style={{ background: C.brand }} className="px-4 sm:px-5 lg:px-8 xl:px-10 pt-5 sm:pt-6 pb-8">
-        <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-5">
-          <div className="flex items-center gap-3">
+      <div style={{ background: C.brand }} className="px-3 sm:px-5 lg:px-8 xl:px-10 pt-4 sm:pt-6 pb-7 sm:pb-8">
+        <div className="ovana-header-row flex flex-col lg:flex-row lg:items-end justify-between gap-5">
+          <div className="ovana-brand-row flex items-center gap-3">
             <div className="rounded-full p-2 flex items-center justify-center" style={{ background: C.green, width: 48, height: 48 }}>
               <img src={OVANA_ICON} alt="Logo Ovana Farm" style={{ width: 32, height: 32, objectFit: 'contain' }} />
             </div>
@@ -3361,7 +3502,7 @@ export default function OvanaFarmDashboard() {
               </div>
             </div>
           </div>
-          <div className="w-full lg:w-auto grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm font-semibold" style={{ color: C.ink }}>
+          <div className="ovana-header-settings w-full lg:w-auto grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm font-semibold" style={{ color: C.ink }}>
             <Field label="Tanggal mulai usaha">
               <TextInput
                 type="date"
@@ -3386,7 +3527,7 @@ export default function OvanaFarmDashboard() {
         </div>
 
         {/* KPI strip */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 mt-6">
+        <div className="ovana-kpi-grid grid grid-cols-2 xl:grid-cols-4 gap-2 sm:gap-3 mt-5 sm:mt-6">
           <KpiCard
             icon={ArrowUpCircle}
             label="Omzet telur bulan ini"
@@ -3418,9 +3559,9 @@ export default function OvanaFarmDashboard() {
       </div>
 
       {/* Tabs */}
-      <div className="px-4 sm:px-5 lg:px-8 xl:px-10 -mt-4">
+      <div className="px-3 sm:px-5 lg:px-8 xl:px-10 -mt-4">
         <div className="ovana-tabs flex w-full gap-1 overflow-x-auto rounded-xl p-1.5"
-          style={{ background: C.panelAlt, border: `1px solid ${C.border}`, width: 'fit-content' }}>
+          style={{ background: C.panelAlt, border: `1px solid ${C.border}`, width: '100%' }}>
           {TABS.map(({ key, label, icon: Icon }) => {
             const active = tab === key;
             return (
