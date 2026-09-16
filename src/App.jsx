@@ -1484,9 +1484,27 @@ function ProjectTab({ finance, settings, eggSales, feed, feedSales }) {
     );
   }
 
-  // Investasi/modal boleh terjadi SEBELUM tanggal mulai usaha.
-  // Contoh: kandang dibeli 14 Agu, sedangkan usaha mulai 23 Agu.
-  // Biaya seperti itu tetap harus dihitung ke modal awal dan BEP.
+  /*
+   * LOGIKA BEP BERBASIS PROFIT
+   *
+   * Modal/investasi:
+   * - kandang
+   * - pembelian ayam
+   * - peralatan
+   *
+   * Profit operasional:
+   * pemasukan usaha
+   * - biaya pakan yang BENAR-BENAR TERPAKAI
+   * - HPP pakan yang TERJUAL
+   * - biaya operasional lain
+   *
+   * Pembelian stok pakan TIDAK langsung menjadi biaya profit,
+   * karena stok yang belum dipakai/terjual masih merupakan persediaan.
+   *
+   * BEP tercapai ketika:
+   * profit operasional kumulatif >= modal/investasi kumulatif.
+   */
+
   const capitalRows = [...finance]
     .filter(
       (r) =>
@@ -1496,63 +1514,144 @@ function ProjectTab({ finance, settings, eggSales, feed, feedSales }) {
     )
     .sort((a, b) => a.date.localeCompare(b.date));
 
-  // Aktivitas operasional dan pemasukan dihitung mulai tanggal usaha.
-  // Baris modal dikeluarkan dari sini agar tidak double count.
-  const operatingRows = [...finance]
-    .filter(
-      (r) =>
-        r.date >= startDate &&
-        r.date <= today &&
-        !(r.type === 'expense' && capitalCategories.has(r.category))
-    )
+  const financeFromStart = [...finance]
+    .filter((r) => r.date >= startDate && r.date <= today)
     .sort((a, b) => a.date.localeCompare(b.date));
 
-  const relevant = [...capitalRows, ...operatingRows]
-    .sort((a, b) => a.date.localeCompare(b.date));
+  const totalCapital = capitalRows.reduce(
+    (sum, r) => sum + (Number(r.amount) || 0),
+    0
+  );
 
-  const totalIncome = operatingRows
+  const totalOperatingRevenue = financeFromStart
     .filter((r) => r.type === 'income')
     .reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
 
-  const capitalExpense = capitalRows
+  // Pengeluaran lain yang memang langsung menjadi biaya.
+  // Pembelian stok pakan dikecualikan karena biaya pakan diakui saat dipakai/terjual.
+  const totalOtherOperatingExpense = financeFromStart
+    .filter(
+      (r) =>
+        r.type === 'expense' &&
+        !capitalCategories.has(r.category) &&
+        r.category !== 'Pakan'
+    )
     .reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
 
-  const operatingExpenseCash = operatingRows
-    .filter((r) => r.type === 'expense')
-    .reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
+  const totalFeedUsageCost = feed
+    .filter((r) => r.date >= startDate && r.date <= today)
+    .reduce((sum, r) => sum + (Number(r.feedCost) || 0), 0);
 
-  const totalExpense = capitalExpense + operatingExpenseCash;
-  const currentNet = totalIncome - totalExpense;
+  const totalFeedSaleCost = feedSales
+    .filter((r) => r.date >= startDate && r.date <= today)
+    .reduce((sum, r) => sum + (Number(r.costTotal) || 0), 0);
 
-  // Modal yang keluar sebelum tanggal mulai menjadi opening deficit.
+  const totalOperatingCost =
+    totalFeedUsageCost +
+    totalFeedSaleCost +
+    totalOtherOperatingExpense;
+
+  const cumulativeOperatingProfit =
+    totalOperatingRevenue - totalOperatingCost;
+
+  // Posisi BEP: profit yang sudah dihasilkan dikurangi modal yang harus kembali.
+  const bepBalance = cumulativeOperatingProfit - totalCapital;
+  const remainingToBep = Math.max(0, totalCapital - cumulativeOperatingProfit);
+
+  const progress = totalCapital > 0
+    ? Math.max(
+        0,
+        Math.min(100, (cumulativeOperatingProfit / totalCapital) * 100)
+      )
+    : bepBalance >= 0
+      ? 100
+      : 0;
+
+  // ---------------------------------------------------------------
+  // Kurva BEP aktual: profit kumulatif - investasi kumulatif
+  // ---------------------------------------------------------------
   const preStartCapital = capitalRows
     .filter((r) => r.date < startDate)
     .reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
 
-  // Arus kas aktual sejak tanggal mulai usaha.
-  // Capital yang terjadi pada/ setelah tanggal mulai tetap masuk pada tanggal transaksinya.
   const dailyMap = {};
-  operatingRows.forEach((r) => {
-    if (!dailyMap[r.date]) dailyMap[r.date] = { income: 0, expense: 0 };
+
+  const ensureDay = (date) => {
+    if (!dailyMap[date]) {
+      dailyMap[date] = {
+        revenue: 0,
+        otherExpense: 0,
+        feedUsageCost: 0,
+        feedSaleCost: 0,
+        capital: 0,
+      };
+    }
+    return dailyMap[date];
+  };
+
+  financeFromStart.forEach((r) => {
+    const day = ensureDay(r.date);
     const amount = Number(r.amount) || 0;
-    if (r.type === 'income') dailyMap[r.date].income += amount;
-    else dailyMap[r.date].expense += amount;
+
+    if (r.type === 'income') {
+      day.revenue += amount;
+      return;
+    }
+
+    if (capitalCategories.has(r.category)) {
+      // Modal diproses dari capitalRows agar tidak double count.
+      return;
+    }
+
+    if (r.category === 'Pakan') {
+      // Pembelian stok bukan biaya profit saat itu juga.
+      return;
+    }
+
+    day.otherExpense += amount;
   });
+
+  feed
+    .filter((r) => r.date >= startDate && r.date <= today)
+    .forEach((r) => {
+      ensureDay(r.date).feedUsageCost += Number(r.feedCost) || 0;
+    });
+
+  feedSales
+    .filter((r) => r.date >= startDate && r.date <= today)
+    .forEach((r) => {
+      ensureDay(r.date).feedSaleCost += Number(r.costTotal) || 0;
+    });
 
   capitalRows
     .filter((r) => r.date >= startDate)
     .forEach((r) => {
-      if (!dailyMap[r.date]) dailyMap[r.date] = { income: 0, expense: 0 };
-      dailyMap[r.date].expense += Number(r.amount) || 0;
+      ensureDay(r.date).capital += Number(r.amount) || 0;
     });
 
   const actual = [];
-  let cumulative = -preStartCapital;
+  let cumulativeProfit = 0;
+  let cumulativeCapital = preStartCapital;
   let cursor = startDate;
 
   while (cursor <= today) {
-    const row = dailyMap[cursor] || { income: 0, expense: 0 };
-    cumulative += row.income - row.expense;
+    const row = dailyMap[cursor] || {
+      revenue: 0,
+      otherExpense: 0,
+      feedUsageCost: 0,
+      feedSaleCost: 0,
+      capital: 0,
+    };
+
+    cumulativeProfit +=
+      row.revenue -
+      row.otherExpense -
+      row.feedUsageCost -
+      row.feedSaleCost;
+
+    cumulativeCapital += row.capital;
+
+    const balance = cumulativeProfit - cumulativeCapital;
 
     actual.push({
       date: cursor,
@@ -1560,40 +1659,21 @@ function ProjectTab({ finance, settings, eggSales, feed, feedSales }) {
         day: '2-digit',
         month: 'short',
       }),
-      actual: cumulative,
+      actual: balance,
       projected: null,
     });
 
     cursor = addDays(cursor, 1);
   }
 
-  const minCumulative = actual.length
-    ? Math.min(...actual.map((r) => r.actual))
-    : 0;
-
-  const maxCapitalAtRisk = Math.abs(Math.min(0, minCumulative));
-
-  const progress = currentNet >= 0
-    ? 100
-    : maxCapitalAtRisk > 0
-      ? Math.max(
-          0,
-          Math.min(
-            100,
-            ((maxCapitalAtRisk - Math.abs(currentNet)) / maxCapitalAtRisk) * 100
-          )
-        )
-      : 0;
-
   let actualBepDate = null;
-  let hadNegativeBefore = false;
+  let hadNegativeBefore = preStartCapital > 0;
 
   for (let i = 0; i < actual.length; i += 1) {
     if (actual[i].actual < 0) hadNegativeBefore = true;
 
     if (hadNegativeBefore && actual[i].actual >= 0) {
       const staysNonNegative = actual.slice(i).every((r) => r.actual >= 0);
-
       if (staysNonNegative) {
         actualBepDate = actual[i].date;
         break;
@@ -1601,93 +1681,86 @@ function ProjectTab({ finance, settings, eggSales, feed, feedSales }) {
     }
   }
 
-  // Proyeksi sederhana dari performa 30 hari terakhir.
-  // Penjualan tidak harus terjadi setiap hari: total penjualan dibagi jumlah hari,
-  // sehingga transaksi tiap 2-3 hari tetap menghasilkan rata-rata harian yang stabil.
+  // ---------------------------------------------------------------
+  // Proyeksi profit rata-rata maksimal 30 hari terakhir
+  // ---------------------------------------------------------------
   const daysRunning = diffDays(startDate, today) + 1;
   const lookbackDays = Math.min(30, daysRunning);
   const lookbackStart = addDays(today, -(lookbackDays - 1));
 
-  const recentSales = eggSales.filter(
+  const recentEggSales = eggSales.filter(
     (r) => r.date >= lookbackStart && r.date <= today
   );
-
-  const recentSalesRevenue = recentSales.reduce(
+  const recentEggRevenue = recentEggSales.reduce(
     (sum, r) => sum + (Number(r.amount) || 0),
     0
   );
-
-  const recentSalesKg = recentSales.reduce(
+  const recentEggKg = recentEggSales.reduce(
     (sum, r) => sum + (Number(r.weightKg) || 0),
     0
   );
-
-  const avgPricePerKg = recentSalesKg > 0
-    ? recentSalesRevenue / recentSalesKg
-    : 0;
+  const avgEggPricePerKg =
+    recentEggKg > 0 ? recentEggRevenue / recentEggKg : 0;
 
   const recentFeedSales = feedSales.filter(
     (r) => r.date >= lookbackStart && r.date <= today
   );
-
   const recentFeedSaleRevenue = recentFeedSales.reduce(
     (sum, r) => sum + (Number(r.amount) || 0),
     0
   );
-
   const recentFeedSaleCost = recentFeedSales.reduce(
     (sum, r) => sum + (Number(r.costTotal) || 0),
     0
   );
-
   const recentFeedSaleMargin =
     recentFeedSaleRevenue - recentFeedSaleCost;
 
-  // Pembelian stok pakan sudah menjadi pengeluaran kas di Keuangan.
-  // Untuk PROFIT operasional harian, biaya pakan memakai qty yang benar-benar terpakai.
   const recentFeedUsageCost = feed
     .filter((r) => r.date >= lookbackStart && r.date <= today)
     .reduce((sum, r) => sum + (Number(r.feedCost) || 0), 0);
 
-  // Pengeluaran operasional selain Pakan diambil dari Keuangan.
-  // Pakan dikeluarkan di sini agar tidak double count dengan biaya pemakaian pakan.
-  const recentOtherOperatingExpense = relevant
+  const recentFinanceRows = financeFromStart.filter(
+    (r) => r.date >= lookbackStart && r.date <= today
+  );
+
+  const recentTotalRevenue = recentFinanceRows
+    .filter((r) => r.type === 'income')
+    .reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
+
+  const recentOtherOperatingExpense = recentFinanceRows
     .filter(
       (r) =>
-        r.date >= lookbackStart &&
         r.type === 'expense' &&
         !capitalCategories.has(r.category) &&
         r.category !== 'Pakan'
     )
     .reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
 
-  const avgDailyRevenue = lookbackDays > 0
-    ? (recentSalesRevenue + recentFeedSaleRevenue) / lookbackDays
-    : 0;
+  const recentOperatingCost =
+    recentFeedUsageCost +
+    recentFeedSaleCost +
+    recentOtherOperatingExpense;
 
-  const avgDailyFeedCost = lookbackDays > 0
-    ? recentFeedUsageCost / lookbackDays
-    : 0;
+  const recentOperatingProfit =
+    recentTotalRevenue - recentOperatingCost;
 
-  const avgDailyOtherExpense = lookbackDays > 0
-    ? recentOtherOperatingExpense / lookbackDays
-    : 0;
-
-  const avgDailyFeedSaleCost = lookbackDays > 0
-    ? recentFeedSaleCost / lookbackDays
-    : 0;
-
-  const avgDailyOperatingCost =
-    avgDailyFeedCost + avgDailyFeedSaleCost + avgDailyOtherExpense;
-
+  const avgDailyRevenue =
+    lookbackDays > 0 ? recentTotalRevenue / lookbackDays : 0;
+  const avgDailyFeedCost =
+    lookbackDays > 0 ? recentFeedUsageCost / lookbackDays : 0;
+  const avgDailyFeedSaleCost =
+    lookbackDays > 0 ? recentFeedSaleCost / lookbackDays : 0;
+  const avgDailyOtherExpense =
+    lookbackDays > 0 ? recentOtherOperatingExpense / lookbackDays : 0;
   const avgDailyProfit =
-    avgDailyRevenue - avgDailyOperatingCost;
+    lookbackDays > 0 ? recentOperatingProfit / lookbackDays : 0;
 
   let estimatedBepDate = null;
   let daysToBep = null;
 
-  if (!actualBepDate && currentNet < 0 && avgDailyProfit > 0) {
-    daysToBep = Math.ceil(Math.abs(currentNet) / avgDailyProfit);
+  if (!actualBepDate && remainingToBep > 0 && avgDailyProfit > 0) {
+    daysToBep = Math.ceil(remainingToBep / avgDailyProfit);
     estimatedBepDate = addDays(today, daysToBep);
   }
 
@@ -1695,14 +1768,13 @@ function ProjectTab({ finance, settings, eggSales, feed, feedSales }) {
 
   if (estimatedBepDate && daysToBep != null) {
     if (chartData.length) {
-      chartData[chartData.length - 1].projected = currentNet;
+      chartData[chartData.length - 1].projected = bepBalance;
     }
 
     const cappedDays = Math.min(daysToBep, 730);
 
     for (let i = 1; i <= cappedDays; i += 1) {
       const d = addDays(today, i);
-
       chartData.push({
         date: d,
         label: parseISO(d).toLocaleDateString('id-ID', {
@@ -1710,7 +1782,7 @@ function ProjectTab({ finance, settings, eggSales, feed, feedSales }) {
           month: 'short',
         }),
         actual: null,
-        projected: currentNet + avgDailyProfit * i,
+        projected: bepBalance + avgDailyProfit * i,
       });
     }
   }
@@ -1724,11 +1796,11 @@ function ProjectTab({ finance, settings, eggSales, feed, feedSales }) {
   const statusSub = actualBepDate
     ? `${diffDays(startDate, actualBepDate) + 1} hari sejak mulai usaha`
     : estimatedBepDate
-      ? `± ${daysToBep} hari lagi berdasarkan rata-rata ${lookbackDays} hari terakhir`
-      : currentNet >= 0
-        ? 'Posisi kas sudah non-negatif.'
-        : recentSalesRevenue + recentFeedSaleRevenue <= 0
-          ? `Belum ada penjualan telur atau pakan dalam ${lookbackDays} hari terakhir.`
+      ? `± ${daysToBep} hari lagi dari profit rata-rata ${lookbackDays} hari terakhir`
+      : remainingToBep <= 0
+        ? 'Profit kumulatif sudah menutup seluruh modal.'
+        : recentTotalRevenue <= 0
+          ? `Belum ada pemasukan usaha dalam ${lookbackDays} hari terakhir.`
           : avgDailyProfit <= 0
             ? 'Rata-rata profit operasional belum positif.'
             : 'Data belum cukup untuk proyeksi.';
@@ -1737,14 +1809,14 @@ function ProjectTab({ finance, settings, eggSales, feed, feedSales }) {
     <div className="flex flex-col gap-6">
       <SectionCard
         title="Proyeksi usaha & BEP"
-        description="BEP aktual memakai seluruh modal/investasi, termasuk yang dibayar sebelum tanggal mulai usaha, lalu pemasukan dan biaya operasional sejak usaha berjalan."
+        description="BEP dihitung dari profit operasional yang terkumpul untuk mengembalikan modal/investasi. Pembelian stok pakan belum dianggap biaya profit sampai pakan dipakai atau terjual."
       >
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
           {[
             ['Mulai usaha', prettyDate(startDate)],
             ['Hari berjalan', `${daysRunning} hari`],
-            ['Modal/investasi tercatat', idr(capitalExpense)],
-            ['Biaya operasional kas', idr(operatingExpenseCash)],
+            ['Modal/investasi tercatat', idr(totalCapital)],
+            ['Biaya operasional terpakai', idr(totalOperatingCost)],
           ].map(([label, value]) => (
             <div
               key={label}
@@ -1771,26 +1843,27 @@ function ProjectTab({ finance, settings, eggSales, feed, feedSales }) {
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
         <KpiCard
           icon={ArrowUpCircle}
-          label="Pemasukan sejak awal"
-          value={idr(totalIncome)}
+          label="Pemasukan usaha sejak awal"
+          value={idr(totalOperatingRevenue)}
           accent={C.sage}
         />
         <KpiCard
           icon={ArrowDownCircle}
-          label="Pengeluaran sejak awal"
-          value={idr(totalExpense)}
+          label="Biaya operasional terpakai"
+          value={idr(totalOperatingCost)}
+          sub="bukan seluruh pembelian stok"
           accent={C.rust}
         />
         <KpiCard
           icon={Wallet}
-          label="Laba/rugi kas saat ini"
-          value={idr(currentNet)}
+          label="Profit operasional kumulatif"
+          value={idr(cumulativeOperatingProfit)}
           sub={
-            currentNet >= 0
-              ? 'Kas kumulatif non-negatif'
-              : `Masih kurang ${idr(Math.abs(currentNet))} menuju Rp 0`
+            cumulativeOperatingProfit >= 0
+              ? 'Profit setelah biaya operasional'
+              : `Rugi operasional ${idr(Math.abs(cumulativeOperatingProfit))}`
           }
-          accent={currentNet >= 0 ? C.sage : C.rust}
+          accent={cumulativeOperatingProfit >= 0 ? C.sage : C.rust}
         />
         <KpiCard
           icon={Calculator}
@@ -1803,20 +1876,14 @@ function ProjectTab({ finance, settings, eggSales, feed, feedSales }) {
 
       <SectionCard
         title={`Performa ${lookbackDays} hari terakhir`}
-        description="Penjualan boleh terjadi tiap 2–3 hari. Sistem merata-ratakan total penjualan ke seluruh periode agar proyeksi tidak melonjak."
+        description="Profit dihitung dari pemasukan usaha dikurangi biaya yang benar-benar terpakai/terjual. Penjualan yang hanya terjadi tiap 2–3 hari tetap dirata-ratakan ke seluruh periode."
       >
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
           {[
-            ['Penjualan telur', idr(recentSalesRevenue)],
+            ['Penjualan telur', idr(recentEggRevenue)],
             ['Penjualan pakan', idr(recentFeedSaleRevenue)],
             ['Margin jual pakan', idr(recentFeedSaleMargin)],
-            ['Profit operasional', idr(
-              recentSalesRevenue
-              + recentFeedSaleRevenue
-              - recentFeedUsageCost
-              - recentFeedSaleCost
-              - recentOtherOperatingExpense
-            )],
+            ['Profit operasional', idr(recentOperatingProfit)],
           ].map(([label, value]) => (
             <div
               key={label}
@@ -1842,17 +1909,17 @@ function ProjectTab({ finance, settings, eggSales, feed, feedSales }) {
         <div className="text-xs mt-3" style={{ color: C.inkSoft }}>
           Rata-rata pemasukan: <b>{idr(avgDailyRevenue)} / hari</b>
           {' · '}
-          biaya pakan terpakai: <b>{idr(avgDailyFeedCost)} / hari</b>
+          pakan terpakai: <b>{idr(avgDailyFeedCost)} / hari</b>
           {' · '}
-          modal pakan terjual: <b>{idr(avgDailyFeedSaleCost)} / hari</b>
+          HPP pakan terjual: <b>{idr(avgDailyFeedSaleCost)} / hari</b>
           {' · '}
           biaya lain: <b>{idr(avgDailyOtherExpense)} / hari</b>
           {' · '}
           profit rata-rata: <b>{idr(avgDailyProfit)} / hari</b>
-          {avgPricePerKg > 0 ? (
+          {avgEggPricePerKg > 0 ? (
             <>
               {' · '}
-              harga jual rata-rata: <b>{idr(avgPricePerKg)} / kg</b>
+              harga telur rata-rata: <b>{idr(avgEggPricePerKg)} / kg</b>
             </>
           ) : null}
         </div>
@@ -1860,14 +1927,16 @@ function ProjectTab({ finance, settings, eggSales, feed, feedSales }) {
 
       <SectionCard
         title="Progress menuju BEP"
-        description="BEP aktual tercapai saat arus kas kumulatif sejak awal kembali ke Rp 0 atau positif."
+        description="Progress menunjukkan berapa bagian modal/investasi yang sudah tertutup oleh profit operasional kumulatif."
       >
         <div className="flex items-center justify-between gap-4 mb-2">
           <div className="text-sm" style={{ color: C.inkSoft }}>
             {actualBepDate ? 'BEP sudah tercapai' : `Progress ${progress.toFixed(1)}%`}
           </div>
           <div className="text-sm font-semibold" style={{ color: C.ink }}>
-            {currentNet >= 0 ? idr(currentNet) : `-${idr(Math.abs(currentNet))}`}
+            {remainingToBep > 0
+              ? `Sisa ${idr(remainingToBep)}`
+              : `Lewat BEP ${idr(Math.max(0, bepBalance))}`}
           </div>
         </div>
 
@@ -1879,7 +1948,7 @@ function ProjectTab({ finance, settings, eggSales, feed, feedSales }) {
             style={{
               width: `${progress}%`,
               height: '100%',
-              background: currentNet >= 0 ? C.sage : C.amberDeep,
+              background: progress >= 100 ? C.sage : C.amberDeep,
               transition: 'width 0.25s ease',
             }}
           />
@@ -1887,11 +1956,11 @@ function ProjectTab({ finance, settings, eggSales, feed, feedSales }) {
       </SectionCard>
 
       <SectionCard
-        title="Kurva BEP"
-        description="Garis aktual berasal dari transaksi nyata. Garis proyeksi memakai profit operasional rata-rata."
+        title="Kurva BEP berbasis profit"
+        description="Garis aktual = profit operasional kumulatif dikurangi modal/investasi. Titik Rp 0 berarti modal sudah tertutup oleh profit."
       >
         {chartData.length === 0 ? (
-          <EmptyRow text="Belum ada data keuangan." />
+          <EmptyRow text="Belum ada data untuk kurva BEP." />
         ) : (
           <div style={{ height: 320 }}>
             <ResponsiveContainer width="100%" height="100%">
@@ -1919,7 +1988,7 @@ function ProjectTab({ finance, settings, eggSales, feed, feedSales }) {
                   labelStyle={{ color: '#fff' }}
                   formatter={(value, name) => [
                     idr(Number(value)),
-                    name === 'actual' ? 'Aktual' : 'Proyeksi',
+                    name === 'actual' ? 'Posisi BEP aktual' : 'Proyeksi',
                   ]}
                 />
                 <ReferenceLine
@@ -1956,10 +2025,11 @@ function ProjectTab({ finance, settings, eggSales, feed, feedSales }) {
         className="rounded-xl px-4 py-3 text-xs leading-relaxed"
         style={{ background: C.panelAlt, border: `1px solid ${C.border}`, color: C.inkSoft }}
       >
-        <b style={{ color: C.ink }}>Cara bacanya:</b> pembelian stok pakan tetap masuk
-        Keuangan sebagai pengeluaran kas. Pemakaian pakan dikonversi menjadi biaya
-        operasional untuk menghitung profit rata-rata, tetapi tidak dibuat menjadi
-        pengeluaran kedua sehingga tidak terjadi double count.
+        <b style={{ color: C.ink }}>Bedakan profit dan kas:</b>{' '}
+        pembelian stok pakan tetap mengurangi <b>saldo kas</b> saat dibeli,
+        tetapi stok yang belum dipakai masih merupakan persediaan. Untuk BEP berbasis
+        profit, biaya pakan baru diakui ketika pakan dipakai oleh ayam atau terjual.
+        Karena itu saldo kas dan posisi BEP bisa berbeda.
       </div>
     </div>
   );
@@ -3113,7 +3183,7 @@ export default function OvanaFarmDashboard() {
           />
           <KpiCard
             icon={Wallet}
-            label="Saldo bulan ini"
+            label="Saldo kas bulan ini"
             value={idr(kpis.balanceThisMonth)}
             sub={kpis.balanceThisMonth >= 0 ? 'Surplus' : 'Defisit'}
             accent={kpis.balanceThisMonth >= 0 ? C.sage : C.rust}
