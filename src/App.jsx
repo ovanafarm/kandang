@@ -1314,36 +1314,70 @@ function ProjectTab({ finance, settings, eggSales, feed, feedSales }) {
     );
   }
 
-  const relevant = [...finance]
-    .filter((r) => r.date >= startDate && r.date <= today)
+  // Investasi/modal boleh terjadi SEBELUM tanggal mulai usaha.
+  // Contoh: kandang dibeli 14 Agu, sedangkan usaha mulai 23 Agu.
+  // Biaya seperti itu tetap harus dihitung ke modal awal dan BEP.
+  const capitalRows = [...finance]
+    .filter(
+      (r) =>
+        r.type === 'expense' &&
+        capitalCategories.has(r.category) &&
+        r.date <= today
+    )
     .sort((a, b) => a.date.localeCompare(b.date));
 
-  const totalIncome = relevant
+  // Aktivitas operasional dan pemasukan dihitung mulai tanggal usaha.
+  // Baris modal dikeluarkan dari sini agar tidak double count.
+  const operatingRows = [...finance]
+    .filter(
+      (r) =>
+        r.date >= startDate &&
+        r.date <= today &&
+        !(r.type === 'expense' && capitalCategories.has(r.category))
+    )
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  const relevant = [...capitalRows, ...operatingRows]
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  const totalIncome = operatingRows
     .filter((r) => r.type === 'income')
     .reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
 
-  const totalExpense = relevant
+  const capitalExpense = capitalRows
+    .reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
+
+  const operatingExpenseCash = operatingRows
     .filter((r) => r.type === 'expense')
     .reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
 
-  const capitalExpense = relevant
-    .filter((r) => r.type === 'expense' && capitalCategories.has(r.category))
-    .reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
-
-  const operatingExpenseCash = totalExpense - capitalExpense;
+  const totalExpense = capitalExpense + operatingExpenseCash;
   const currentNet = totalIncome - totalExpense;
 
-  // Arus kas aktual sejak awal.
+  // Modal yang keluar sebelum tanggal mulai menjadi opening deficit.
+  const preStartCapital = capitalRows
+    .filter((r) => r.date < startDate)
+    .reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
+
+  // Arus kas aktual sejak tanggal mulai usaha.
+  // Capital yang terjadi pada/ setelah tanggal mulai tetap masuk pada tanggal transaksinya.
   const dailyMap = {};
-  relevant.forEach((r) => {
+  operatingRows.forEach((r) => {
     if (!dailyMap[r.date]) dailyMap[r.date] = { income: 0, expense: 0 };
     const amount = Number(r.amount) || 0;
     if (r.type === 'income') dailyMap[r.date].income += amount;
     else dailyMap[r.date].expense += amount;
   });
 
+  capitalRows
+    .filter((r) => r.date >= startDate)
+    .forEach((r) => {
+      if (!dailyMap[r.date]) dailyMap[r.date] = { income: 0, expense: 0 };
+      dailyMap[r.date].expense += Number(r.amount) || 0;
+    });
+
   const actual = [];
-  let cumulative = 0;
+  let cumulative = -preStartCapital;
   let cursor = startDate;
 
   while (cursor <= today) {
@@ -1533,7 +1567,7 @@ function ProjectTab({ finance, settings, eggSales, feed, feedSales }) {
     <div className="flex flex-col gap-6">
       <SectionCard
         title="Proyeksi usaha & BEP"
-        description="BEP aktual memakai pemasukan dan pengeluaran nyata. Estimasi ke depan memakai penjualan telur, margin penjualan pakan, dan biaya operasional 30 hari terakhir."
+        description="BEP aktual memakai seluruh modal/investasi, termasuk yang dibayar sebelum tanggal mulai usaha, lalu pemasukan dan biaya operasional sejak usaha berjalan."
       >
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
           {[
