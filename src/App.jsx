@@ -217,14 +217,60 @@ const chartTooltipStyle = {
 /* ---------------------------------------------------------------
    Tab: Produksi Telur
 ------------------------------------------------------------------*/
-function EggsTab({ records, onAdd, onDelete, flockSize }) {
+function EggsTab({
+  records,
+  salesRecords,
+  onAdd,
+  onDelete,
+  onAddSale,
+  onDeleteSale,
+  flockSize,
+}) {
   const [form, setForm] = useState({ date: todayISO(), gradeA: '', gradeB: '', broken: '' });
+  const [saleForm, setSaleForm] = useState({
+    date: todayISO(),
+    qty: '',
+    weightKg: '',
+    amount: '',
+    buyer: '',
+    notes: '',
+  });
+
   const sorted = useMemo(() => [...records].sort((a, b) => b.date.localeCompare(a.date)), [records]);
+  const sortedSales = useMemo(() => [...salesRecords].sort((a, b) => b.date.localeCompare(a.date)), [salesRecords]);
+
   const chartData = useMemo(
     () => [...records].sort((a, b) => a.date.localeCompare(b.date)).slice(-14)
       .map((r) => ({ date: r.date.slice(5), total: r.gradeA + r.gradeB })),
     [records]
   );
+
+  const eggStats = useMemo(() => {
+    const produced = records.reduce((sum, r) => sum + (Number(r.gradeA) || 0) + (Number(r.gradeB) || 0), 0);
+    const sold = salesRecords.reduce((sum, r) => sum + (Number(r.qty) || 0), 0);
+    const revenue = salesRecords.reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
+    const stock = produced - sold;
+    const avgPricePerEgg = sold > 0 ? revenue / sold : 0;
+
+    const recent = [...records]
+      .sort((a, b) => b.date.localeCompare(a.date))
+      .slice(0, 14);
+    const uniqueDays = new Set(recent.map((r) => r.date)).size;
+    const recentEggs = recent.reduce((sum, r) => sum + (Number(r.gradeA) || 0) + (Number(r.gradeB) || 0), 0);
+    const avgDaily = uniqueDays > 0 ? recentEggs / uniqueDays : 0;
+
+    return { produced, sold, revenue, stock, avgPricePerEgg, avgDaily };
+  }, [records, salesRecords]);
+
+  const availableOnDate = (date) => {
+    const produced = records
+      .filter((r) => r.date <= date)
+      .reduce((sum, r) => sum + (Number(r.gradeA) || 0) + (Number(r.gradeB) || 0), 0);
+    const sold = salesRecords
+      .filter((r) => r.date <= date)
+      .reduce((sum, r) => sum + (Number(r.qty) || 0), 0);
+    return produced - sold;
+  };
 
   const submit = (e) => {
     e.preventDefault();
@@ -236,9 +282,46 @@ function EggsTab({ records, onAdd, onDelete, flockSize }) {
     setForm({ date: form.date, gradeA: '', gradeB: '', broken: '' });
   };
 
+  const submitSale = (e) => {
+    e.preventDefault();
+    const qty = Number(saleForm.qty) || 0;
+    const weightKg = Number(saleForm.weightKg) || 0;
+    const amount = Number(saleForm.amount) || 0;
+    if (qty <= 0 || amount <= 0) return;
+
+    const available = availableOnDate(saleForm.date);
+    if (qty > available) {
+      alert(`Stok telur sampai tanggal ${fmtDate(saleForm.date)} hanya ${available} butir. Penjualan tidak dapat melebihi stok.`);
+      return;
+    }
+
+    onAddSale({
+      id: uid(),
+      date: saleForm.date,
+      qty,
+      weightKg,
+      amount,
+      buyer: saleForm.buyer.trim(),
+      notes: saleForm.notes.trim(),
+    });
+
+    setSaleForm({ ...saleForm, qty: '', weightKg: '', amount: '', buyer: '', notes: '' });
+  };
+
   return (
     <div className="flex flex-col gap-6">
-      <SectionCard title="Catat produksi telur" description="Input jumlah telur per kualitas untuk hari ini.">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+        <KpiCard icon={Egg} label="Stok telur siap jual" value={`${eggStats.stock} butir`}
+          sub={`${eggStats.sold} butir sudah terjual`} accent={eggStats.stock > 0 ? C.amberDeep : C.inkSoft} />
+        <KpiCard icon={ArrowUpCircle} label="Omzet telur tercatat" value={idr(eggStats.revenue)}
+          sub={eggStats.sold > 0 ? `${eggStats.sold} butir terjual` : 'Belum ada penjualan'} accent={C.sage} />
+        <KpiCard icon={Calculator} label="Harga jual rata-rata" value={eggStats.sold > 0 ? idr(eggStats.avgPricePerEgg) : '—'}
+          sub={eggStats.sold > 0 ? 'per butir' : 'Butuh data penjualan'} accent={C.green} />
+        <KpiCard icon={Droplets} label="Produksi rata-rata" value={`${eggStats.avgDaily.toLocaleString('id-ID', { maximumFractionDigits: 1 })} butir/hari`}
+          sub="berdasarkan maksimal 14 catatan terakhir" accent={C.sage} />
+      </div>
+
+      <SectionCard title="Catat produksi telur" description="Input jumlah telur per kualitas untuk hari ini. Telur Grade A dan B otomatis menambah stok siap jual.">
         <form onSubmit={submit} className="flex flex-wrap gap-3 items-end">
           <Field label="Tanggal">
             <TextInput type="date" value={form.date} max={todayISO()}
@@ -258,12 +341,51 @@ function EggsTab({ records, onAdd, onDelete, flockSize }) {
           </Field>
           <button type="submit" className="h-[38px] rounded-lg px-4 flex items-center gap-1.5 text-sm font-medium"
             style={{ background: C.amber, color: C.green }}>
-            <Plus size={16} /> Tambah
+            <Plus size={16} /> Tambah produksi
           </button>
         </form>
       </SectionCard>
 
-      <SectionCard title="Tren produksi (14 hari terakhir)">
+      <SectionCard
+        title="Catat penjualan telur"
+        description="Penjualan mengurangi stok telur dan otomatis masuk ke Keuangan sebagai pemasukan kategori Penjualan telur."
+      >
+        <form onSubmit={submitSale} className="flex flex-wrap gap-3 items-end">
+          <Field label="Tanggal jual">
+            <TextInput type="date" value={saleForm.date} max={todayISO()}
+              onChange={(e) => setSaleForm({ ...saleForm, date: e.target.value })} />
+          </Field>
+          <Field label="Terjual (butir)">
+            <TextInput type="number" min="1" step="1" placeholder="0" value={saleForm.qty}
+              onChange={(e) => setSaleForm({ ...saleForm, qty: e.target.value })} style={{ width: 120 }} />
+          </Field>
+          <Field label="Berat (kg, opsional)">
+            <TextInput type="number" min="0" step="0.01" placeholder="0" value={saleForm.weightKg}
+              onChange={(e) => setSaleForm({ ...saleForm, weightKg: e.target.value })} style={{ width: 130 }} />
+          </Field>
+          <Field label="Total penjualan (Rp)">
+            <TextInput type="number" min="1" placeholder="0" value={saleForm.amount}
+              onChange={(e) => setSaleForm({ ...saleForm, amount: e.target.value })} style={{ width: 150 }} />
+          </Field>
+          <Field label="Pembeli (opsional)">
+            <TextInput type="text" placeholder="mis. tetangga" value={saleForm.buyer}
+              onChange={(e) => setSaleForm({ ...saleForm, buyer: e.target.value })} style={{ width: 160 }} />
+          </Field>
+          <Field label="Catatan">
+            <TextInput type="text" placeholder="opsional" value={saleForm.notes}
+              onChange={(e) => setSaleForm({ ...saleForm, notes: e.target.value })} style={{ width: 170 }} />
+          </Field>
+          <button type="submit" className="h-[38px] rounded-lg px-4 flex items-center gap-1.5 text-sm font-medium"
+            style={{ background: C.green, color: '#fff' }}>
+            <Plus size={16} /> Simpan penjualan
+          </button>
+        </form>
+        <div className="text-xs mt-3" style={{ color: C.inkSoft }}>
+          Stok yang tersedia sampai tanggal terpilih akan dicek otomatis agar penjualan tidak melebihi produksi tercatat.
+        </div>
+      </SectionCard>
+
+      <SectionCard title="Tren produksi (14 catatan terakhir)">
         {chartData.length === 0 ? <EmptyRow text="Belum ada data telur." /> : (
           <div style={{ height: 220 }}>
             <ResponsiveContainer width="100%" height="100%">
@@ -279,7 +401,27 @@ function EggsTab({ records, onAdd, onDelete, flockSize }) {
         )}
       </SectionCard>
 
-      <SectionCard title="Riwayat">
+      <SectionCard title="Riwayat penjualan telur">
+        {sortedSales.length === 0 ? <EmptyRow text="Belum ada penjualan telur." /> : (
+          <div className="flex flex-col divide-y" style={{ borderColor: C.border }}>
+            {sortedSales.map((r) => (
+              <div key={r.id} className="flex items-center justify-between py-2.5 gap-3 flex-wrap" style={{ borderColor: C.border }}>
+                <div className="text-sm font-medium" style={{ minWidth: 100 }}>{fmtDate(r.date)}</div>
+                <div className="text-sm flex-1" style={{ color: C.inkSoft }}>
+                  <b style={{ color: C.ink }}>{r.qty} butir</b>
+                  {r.weightKg > 0 ? ` · ${r.weightKg} kg` : ''}
+                  {' · '}{idr(r.amount)}
+                  {r.buyer ? ` · ${r.buyer}` : ''}
+                  {r.notes ? ` · ${r.notes}` : ''}
+                </div>
+                <DeleteBtn onClick={() => onDeleteSale(r)} />
+              </div>
+            ))}
+          </div>
+        )}
+      </SectionCard>
+
+      <SectionCard title="Riwayat produksi">
         {sorted.length === 0 ? <EmptyRow text="Belum ada catatan." /> : (
           <div className="flex flex-col divide-y" style={{ borderColor: C.border }}>
             {sorted.map((r) => {
@@ -327,6 +469,7 @@ function FeedTab({
     date: todayISO(),
     feedType: 'Konsentrat',
     stockKg: '',
+    purchaseCost: '',
     notes: '',
   });
 
@@ -354,11 +497,25 @@ function FeedTab({
         .filter((r) => r.feedType === type)
         .reduce((sum, r) => sum + (Number(r.stockKg) || 0), 0);
 
+      const incomingCost = stockRecords
+        .filter((r) => r.feedType === type)
+        .reduce((sum, r) => sum + (Number(r.purchaseCost) || 0), 0);
+
       const used = records
         .filter((r) => r.feedType === type)
         .reduce((sum, r) => sum + (Number(r.feedKg) || 0), 0);
 
+      const usedCost = records
+        .filter((r) => r.feedType === type)
+        .reduce((sum, r) => sum + (Number(r.feedCost) || 0), 0);
+
       const stock = incoming - used;
+      const stockValue = Math.max(0, incomingCost - usedCost);
+      const unitCost = stock > 0
+        ? stockValue / stock
+        : incoming > 0
+          ? incomingCost / incoming
+          : 0;
 
       const recentRows = records
         .filter((r) => r.feedType === type)
@@ -379,7 +536,18 @@ function FeedTab({
         ? Math.floor(stock / avgDaily)
         : null;
 
-      return { type, incoming, used, stock, avgDaily, daysLeft };
+      return {
+        type,
+        incoming,
+        incomingCost,
+        used,
+        usedCost,
+        stock,
+        stockValue,
+        unitCost,
+        avgDaily,
+        daysLeft,
+      };
     }).filter((x) => x.incoming > 0 || x.used > 0);
   }, [records, stockRecords]);
 
@@ -397,12 +565,17 @@ function FeedTab({
       if (!ok) return;
     }
 
+    const unitCost = selectedStock?.unitCost || 0;
+    const feedCost = feedKg * unitCost;
+
     onAdd({
       id: uid(),
       date: form.date,
       feedKg,
       feedType: form.feedType,
       waterLiter,
+      unitCost,
+      feedCost,
     });
 
     setForm({ ...form, feedKg: '', waterLiter: '' });
@@ -411,17 +584,23 @@ function FeedTab({
   const submitStock = (e) => {
     e.preventDefault();
     const stockKg = Number(stockForm.stockKg) || 0;
+    const purchaseCost = Number(stockForm.purchaseCost) || 0;
     if (stockKg <= 0) return;
+    if (purchaseCost <= 0) {
+      alert('Isi harga pembelian pakan agar biaya operasional dapat dihitung.');
+      return;
+    }
 
     onAddStock({
       id: uid(),
       date: stockForm.date,
       feedType: stockForm.feedType,
       stockKg,
+      purchaseCost,
       notes: stockForm.notes.trim(),
     });
 
-    setStockForm({ ...stockForm, stockKg: '', notes: '' });
+    setStockForm({ ...stockForm, stockKg: '', purchaseCost: '', notes: '' });
   };
 
   return (
@@ -470,6 +649,12 @@ function FeedTab({
                     Terpakai {s.used.toLocaleString('id-ID', { maximumFractionDigits: 1 })} kg
                   </div>
 
+                  <div className="text-xs mt-1" style={{ color: C.inkSoft }}>
+                    Harga rata-rata stok: <b>{idr(s.unitCost)} / kg</b>
+                    {' · '}
+                    Nilai stok: <b>{idr(s.stockValue)}</b>
+                  </div>
+
                   <div className="text-xs mt-1" style={{ color: lowStock ? C.rust : C.inkSoft }}>
                     {s.avgDaily > 0
                       ? `Rata-rata ${s.avgDaily.toLocaleString('id-ID', { maximumFractionDigits: 1 })} kg/hari`
@@ -491,7 +676,7 @@ function FeedTab({
 
       <SectionCard
         title="Tambah stok pakan"
-        description="Catat setiap pakan yang baru dibeli atau masuk ke gudang."
+        description="Catat jumlah dan harga pembelian. Nilainya otomatis masuk Keuangan sebagai pengeluaran Pakan."
       >
         <form onSubmit={submitStock} className="flex flex-wrap gap-3 items-end">
           <Field label="Tanggal masuk">
@@ -524,6 +709,24 @@ function FeedTab({
             />
           </Field>
 
+          <Field label="Harga pembelian total (Rp)">
+            <TextInput
+              type="number"
+              min="0"
+              step="1"
+              placeholder="0"
+              value={stockForm.purchaseCost}
+              onChange={(e) => setStockForm({ ...stockForm, purchaseCost: e.target.value })}
+              style={{ width: 180 }}
+            />
+          </Field>
+
+          {Number(stockForm.stockKg) > 0 && Number(stockForm.purchaseCost) > 0 && (
+            <div className="text-xs pb-2" style={{ color: C.inkSoft }}>
+              ≈ <b>{idr(Number(stockForm.purchaseCost) / Number(stockForm.stockKg))} / kg</b>
+            </div>
+          )}
+
           <Field label="Catatan">
             <TextInput
               type="text"
@@ -544,7 +747,7 @@ function FeedTab({
         </form>
       </SectionCard>
 
-      <SectionCard title="Catat pakan & minum" description="Input konsumsi pakan dan air hari ini.">
+      <SectionCard title="Catat pakan & minum" description="Input konsumsi harian. Qty pakan otomatis dikonversi menjadi biaya operasional berdasarkan harga rata-rata stok.">
         <form onSubmit={submit} className="flex flex-wrap gap-3 items-end">
           <Field label="Tanggal">
             <TextInput
@@ -641,6 +844,7 @@ function FeedTab({
                 </div>
                 <div className="text-sm flex-1" style={{ color: C.inkSoft }}>
                   {r.feedType} · +{r.stockKg} kg
+                  {r.purchaseCost > 0 ? ` · ${idr(r.purchaseCost)} (${idr(r.purchaseCost / r.stockKg)}/kg)` : ''}
                   {r.notes ? ` · ${r.notes}` : ''}
                 </div>
                 <DeleteBtn onClick={() => onDeleteStock(r.id)} />
@@ -666,6 +870,7 @@ function FeedTab({
                 </div>
                 <div className="text-sm flex-1" style={{ color: C.inkSoft }}>
                   {r.feedType} · {r.feedKg} kg pakan
+                  {r.feedCost > 0 ? ` · biaya ${idr(r.feedCost)} (${idr(r.unitCost)}/kg)` : ''}
                   {r.waterLiter ? ` · ${r.waterLiter} L air` : ''}
                 </div>
                 <DeleteBtn onClick={() => onDelete(r.id)} />
@@ -751,7 +956,7 @@ function HealthTab({ records, onAdd, onDelete }) {
    Tab: Keuangan
 ------------------------------------------------------------------*/
 function FinanceTab({ records, onAdd, onDelete }) {
-  const [form, setForm] = useState({ date: todayISO(), type: 'income', category: 'Penjualan telur', amount: '', notes: '' });
+  const [form, setForm] = useState({ date: todayISO(), type: 'income', category: 'Penjualan ayam afkir', amount: '', notes: '' });
   const sorted = useMemo(() => [...records].sort((a, b) => b.date.localeCompare(a.date)), [records]);
   const chartData = useMemo(() => {
     const byDate = {};
@@ -764,7 +969,7 @@ function FinanceTab({ records, onAdd, onDelete }) {
     return Object.values(byDate);
   }, [records]);
 
-  const incomeCategories = ['Penjualan telur', 'Penjualan ayam afkir', 'Lainnya'];
+  const incomeCategories = ['Penjualan ayam afkir', 'Lainnya'];
   const expenseCategories = ['Pembuatan/renovasi kandang', 'Pembelian ayam', 'Peralatan', 'Pakan', 'Obat & vitamin', 'Listrik/air', 'Tenaga kerja', 'Transportasi', 'Perbaikan kandang', 'Lainnya'];
 
   const submit = (e) => {
@@ -777,7 +982,10 @@ function FinanceTab({ records, onAdd, onDelete }) {
 
   return (
     <div className="flex flex-col gap-6">
-      <SectionCard title="Catat pemasukan / pengeluaran" description="Lacak penjualan telur dan biaya operasional kandang.">
+      <SectionCard title="Catat pemasukan / pengeluaran" description="Lacak biaya operasional dan pemasukan selain penjualan telur.">
+        <div className="rounded-lg px-3 py-2 text-xs mb-4" style={{ background: C.amberSoft, color: C.ink }}>
+          Penjualan telur dicatat dari menu <b>Produksi Telur</b> supaya stok telur ikut berkurang dan pemasukan masuk otomatis ke Keuangan.
+        </div>
         <form onSubmit={submit} className="flex flex-wrap gap-3 items-end">
           <Field label="Tanggal">
             <TextInput type="date" value={form.date} max={todayISO()}
@@ -804,7 +1012,7 @@ function FinanceTab({ records, onAdd, onDelete }) {
               onChange={(e) => setForm({ ...form, amount: e.target.value })} style={{ width: 140 }} />
           </Field>
           <Field label="Catatan (opsional)">
-            <TextInput type="text" placeholder="mis. pembeli, toko" value={form.notes}
+            <TextInput type="text" placeholder="mis. toko, pembelian" value={form.notes}
               onChange={(e) => setForm({ ...form, notes: e.target.value })} style={{ width: 180 }} />
           </Field>
           <button type="submit" className="h-[38px] rounded-lg px-4 flex items-center gap-1.5 text-sm font-medium"
@@ -814,7 +1022,7 @@ function FinanceTab({ records, onAdd, onDelete }) {
         </form>
       </SectionCard>
 
-      <SectionCard title="Arus kas (14 hari terakhir)">
+      <SectionCard title="Arus kas (14 transaksi terakhir)">
         {chartData.length === 0 ? <EmptyRow text="Belum ada data keuangan." /> : (
           <div style={{ height: 220 }}>
             <ResponsiveContainer width="100%" height="100%">
@@ -823,8 +1031,7 @@ function FinanceTab({ records, onAdd, onDelete }) {
                 <XAxis dataKey="date" tick={{ fontSize: 11, fill: C.inkSoft }} axisLine={{ stroke: C.border }} tickLine={false} />
                 <YAxis tick={{ fontSize: 11, fill: C.inkSoft }} axisLine={false} tickLine={false}
                   tickFormatter={(v) => (v >= 1000 ? `${v / 1000}k` : v)} />
-                <Tooltip contentStyle={chartTooltipStyle} labelStyle={{ color: '#fff' }}
-                  formatter={(v) => idr(v)} />
+                <Tooltip contentStyle={chartTooltipStyle} labelStyle={{ color: '#fff' }} formatter={(v) => idr(v)} />
                 <Bar dataKey="masuk" fill={C.sage} radius={[4, 4, 0, 0]} name="Pemasukan" />
                 <Bar dataKey="keluar" fill={C.rust} radius={[4, 4, 0, 0]} name="Pengeluaran" />
               </BarChart>
@@ -833,22 +1040,17 @@ function FinanceTab({ records, onAdd, onDelete }) {
         )}
       </SectionCard>
 
-      <SectionCard title="Riwayat">
-        {sorted.length === 0 ? <EmptyRow text="Belum ada catatan keuangan." /> : (
+      <SectionCard title="Riwayat keuangan">
+        {sorted.length === 0 ? <EmptyRow text="Belum ada transaksi." /> : (
           <div className="flex flex-col divide-y" style={{ borderColor: C.border }}>
             {sorted.map((r) => (
               <div key={r.id} className="flex items-center justify-between py-2.5 gap-3 flex-wrap" style={{ borderColor: C.border }}>
-                <div className="text-sm font-medium flex items-center gap-2" style={{ minWidth: 100 }}>
-                  {r.type === 'income'
-                    ? <ArrowUpCircle size={15} color={C.sage} />
-                    : <ArrowDownCircle size={15} color={C.rust} />}
-                  {fmtDate(r.date)}
-                </div>
+                <div className="text-sm font-medium" style={{ minWidth: 100 }}>{fmtDate(r.date)}</div>
                 <div className="text-sm flex-1" style={{ color: C.inkSoft }}>
-                  {r.category}{r.notes ? ` · ${r.notes}` : ''}
-                </div>
-                <div className="text-sm font-semibold" style={{ color: r.type === 'income' ? C.sage : C.rust }}>
-                  {r.type === 'income' ? '+' : '-'}{idr(r.amount)}
+                  <span style={{ color: r.type === 'income' ? C.sage : C.rust, fontWeight: 700 }}>
+                    {r.type === 'income' ? '+' : '-'}{idr(r.amount)}
+                  </span>
+                  {' · '}{r.category}{r.notes ? ` · ${r.notes}` : ''}
                 </div>
                 <DeleteBtn onClick={() => onDelete(r.id)} />
               </div>
@@ -863,7 +1065,7 @@ function FinanceTab({ records, onAdd, onDelete }) {
 /* ---------------------------------------------------------------
    Tab: Proyeksi Usaha
 ------------------------------------------------------------------*/
-function ProjectTab({ finance, settings }) {
+function ProjectTab({ finance, settings, eggs, eggSales, feed }) {
   const startDate = settings.startDate || '';
   const today = todayISO();
   const capitalCategories = new Set([
@@ -967,21 +1169,55 @@ function ProjectTab({ finance, settings }) {
     }
   }
 
-  const lookbackDays = Math.min(14, diffDays(startDate, today) + 1);
-  const lookbackStart = addDays(today, -(lookbackDays - 1));
-  let recentOperatingNet = 0;
-  relevant.forEach((r) => {
-    if (r.date < lookbackStart || r.date > today) return;
-    const amount = Number(r.amount) || 0;
-    if (r.type === 'income') recentOperatingNet += amount;
-    else if (!capitalCategories.has(r.category)) recentOperatingNet -= amount;
-  });
-  const avgDailyOperatingNet = lookbackDays > 0 ? recentOperatingNet / lookbackDays : 0;
+  // Proyeksi produksi: penjualan bisa terjadi setiap beberapa hari,
+  // jadi pendapatan harian estimasi dihaluskan dari produksi telur aktual.
+  const productionLookbackStart = addDays(today, -13);
+  const recentProduction = eggs.filter((r) => r.date >= productionLookbackStart && r.date <= today);
+  const productionDays = new Set(recentProduction.map((r) => r.date)).size;
+  const recentProducedEggs = recentProduction.reduce(
+    (sum, r) => sum + (Number(r.gradeA) || 0) + (Number(r.gradeB) || 0),
+    0
+  );
+  const avgDailyEggProduction = productionDays > 0 ? recentProducedEggs / productionDays : 0;
+
+  const salesForPrice = eggSales.filter((r) => r.date >= startDate && r.date <= today);
+  const totalSoldEggs = salesForPrice.reduce((sum, r) => sum + (Number(r.qty) || 0), 0);
+  const totalEggRevenue = salesForPrice.reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
+  const avgPricePerEgg = totalSoldEggs > 0 ? totalEggRevenue / totalSoldEggs : 0;
+  const estimatedDailyEggRevenue = avgDailyEggProduction * avgPricePerEgg;
+
+  const daysRunning = diffDays(startDate, today) + 1;
+  const costLookbackDays = Math.min(30, daysRunning);
+  const costLookbackStart = addDays(today, -(costLookbackDays - 1));
+  // Untuk proyeksi profit, biaya pakan mengikuti pemakaian aktual per hari,
+  // bukan tanggal pembelian stok. Pembelian stok tetap masuk arus kas/BEP aktual.
+  const recentOtherOperatingExpense = relevant
+    .filter((r) =>
+      r.date >= costLookbackStart
+      && r.type === 'expense'
+      && !capitalCategories.has(r.category)
+      && r.category !== 'Pakan'
+    )
+    .reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
+
+  const recentFeedUsageCost = feed
+    .filter((r) => r.date >= costLookbackStart && r.date <= today)
+    .reduce((sum, r) => sum + (Number(r.feedCost) || 0), 0);
+
+  const avgDailyOtherOperatingExpense = costLookbackDays > 0
+    ? recentOtherOperatingExpense / costLookbackDays
+    : 0;
+  const avgDailyFeedCost = costLookbackDays > 0
+    ? recentFeedUsageCost / costLookbackDays
+    : 0;
+  const avgDailyOperatingExpense = avgDailyOtherOperatingExpense + avgDailyFeedCost;
+
+  const projectedDailyProfit = estimatedDailyEggRevenue - avgDailyOperatingExpense;
 
   let estimatedBepDate = null;
   let daysToBep = null;
-  if (!actualBepDate && currentNet < 0 && avgDailyOperatingNet > 0) {
-    daysToBep = Math.ceil(Math.abs(currentNet) / avgDailyOperatingNet);
+  if (!actualBepDate && currentNet < 0 && projectedDailyProfit > 0) {
+    daysToBep = Math.ceil(Math.abs(currentNet) / projectedDailyProfit);
     estimatedBepDate = addDays(today, daysToBep);
   }
 
@@ -995,37 +1231,41 @@ function ProjectTab({ finance, settings }) {
         date: d,
         label: parseISO(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'short' }),
         actual: null,
-        projected: currentNet + (avgDailyOperatingNet * i),
+        projected: currentNet + (projectedDailyProfit * i),
       });
     }
   }
 
-  const daysRunning = diffDays(startDate, today) + 1;
   const statusLabel = actualBepDate
     ? 'BEP tercapai'
     : estimatedBepDate
       ? prettyDate(estimatedBepDate)
       : 'Belum dapat diproyeksikan';
+
   const statusSub = actualBepDate
     ? `${diffDays(startDate, actualBepDate) + 1} hari sejak mulai usaha`
     : estimatedBepDate
-      ? `± ${daysToBep} hari lagi, berdasar kas operasional ${lookbackDays} hari terakhir`
+      ? `± ${daysToBep} hari lagi berdasarkan produksi telur dan biaya operasional aktual`
       : currentNet >= 0
         ? 'Posisi kas sudah non-negatif, tetapi histori belum menunjukkan crossing BEP yang stabil.'
-        : 'Perlu rata-rata kas operasional harian yang positif.';
+        : totalSoldEggs <= 0
+          ? 'Catat minimal 1 penjualan telur agar harga jual rata-rata dapat dihitung.'
+          : projectedDailyProfit <= 0
+            ? 'Profit harian estimasi belum positif. Produksi/harga jual perlu meningkat atau biaya turun.'
+            : 'Data belum cukup untuk proyeksi.';
 
   return (
     <div className="flex flex-col gap-6">
       <SectionCard
         title="Proyeksi usaha & BEP"
-        description="Dihitung otomatis dari seluruh pemasukan dan pengeluaran sejak tanggal mulai usaha. Pengeluaran modal satu kali dipisahkan dari biaya operasional agar estimasi BEP tidak bias."
+        description="BEP aktual memakai arus kas nyata. Estimasi ke depan memakai produksi telur rata-rata, harga jual aktual, dan biaya operasional harian sehingga penjualan yang dilakukan tiap 2–3 hari tidak membuat proyeksi terlalu melonjak."
       >
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
           {[
             ['Mulai usaha', prettyDate(startDate)],
             ['Hari berjalan', `${daysRunning} hari`],
             ['Modal/investasi tercatat', idr(capitalExpense)],
-            ['Biaya operasional', idr(operatingExpense)],
+            ['Biaya operasional kas', idr(operatingExpense)],
           ].map(([label, value]) => (
             <div key={label} className="rounded-lg p-3" style={{ background: C.panelAlt, border: `1px solid ${C.border}` }}>
               <div className="text-xs" style={{ color: C.inkSoft }}>{label}</div>
@@ -1047,7 +1287,29 @@ function ProjectTab({ finance, settings }) {
           accent={actualBepDate ? C.green : C.amberDeep} />
       </div>
 
-      <SectionCard title="Progress menuju BEP" description="BEP di sini adalah titik ketika arus kas kumulatif sejak awal kembali ke Rp 0 atau positif.">
+      <SectionCard title="Dasar proyeksi harian" description="Pendapatan diproyeksikan dari telur yang benar-benar diproduksi, bukan dari frekuensi pembayaran penjualan.">
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+          {[
+            ['Produksi rata-rata', `${avgDailyEggProduction.toLocaleString('id-ID', { maximumFractionDigits: 1 })} butir/hari`],
+            ['Harga jual rata-rata', totalSoldEggs > 0 ? `${idr(avgPricePerEgg)} / butir` : 'Belum ada data'],
+            ['Biaya pakan terpakai', `${idr(avgDailyFeedCost)} / hari`],
+            ['Estimasi profit operasional', `${idr(projectedDailyProfit)} / hari`],
+          ].map(([label, value]) => (
+            <div key={label} className="rounded-lg p-3" style={{ background: C.panelAlt, border: `1px solid ${C.border}` }}>
+              <div className="text-xs" style={{ color: C.inkSoft }}>{label}</div>
+              <div className="text-sm font-bold mt-1" style={{ color: C.ink }}>{value}</div>
+            </div>
+          ))}
+        </div>
+        <div className="text-xs mt-3" style={{ color: C.inkSoft }}>
+          Estimasi omzet telur: <b>{idr(estimatedDailyEggRevenue)} / hari</b>.
+          Biaya pakan berdasarkan qty yang benar-benar terpakai: <b>{idr(avgDailyFeedCost)} / hari</b>.
+          Biaya operasional lain: <b>{idr(avgDailyOtherOperatingExpense)} / hari</b>.
+          Perhitungan memakai maksimal {costLookbackDays} hari terakhir.
+        </div>
+      </SectionCard>
+
+      <SectionCard title="Progress menuju BEP" description="BEP aktual tercapai ketika arus kas kumulatif sejak awal kembali ke Rp 0 atau positif.">
         <div className="flex items-center justify-between gap-4 mb-2">
           <div className="text-sm" style={{ color: C.inkSoft }}>
             {actualBepDate ? 'BEP sudah tercapai' : `Progress ${progress.toFixed(1)}%`}
@@ -1061,12 +1323,12 @@ function ProjectTab({ finance, settings }) {
         </div>
         {!actualBepDate && currentNet < 0 && (
           <div className="text-xs mt-2" style={{ color: C.inkSoft }}>
-            Rata-rata kas operasional {lookbackDays} hari terakhir: <b>{idr(avgDailyOperatingNet)} / hari</b>.
+            Proyeksi profit bersih harian: <b>{idr(projectedDailyProfit)} / hari</b> setelah memperhitungkan biaya operasional rata-rata.
           </div>
         )}
       </SectionCard>
 
-      <SectionCard title="Perjalanan kas menuju BEP" description="Garis solid = aktual. Garis proyeksi memakai rata-rata kas operasional terbaru dan tidak memasukkan kembali biaya modal satu kali.">
+      <SectionCard title="Perjalanan kas menuju BEP" description="Garis solid = kas aktual. Garis proyeksi = profit harian estimasi dari produksi telur dikurangi biaya operasional.">
         {chartData.length === 0 ? <EmptyRow text="Belum ada transaksi keuangan sejak tanggal mulai usaha." /> : (
           <div style={{ height: 280 }}>
             <ResponsiveContainer width="100%" height="100%">
@@ -1082,7 +1344,7 @@ function ProjectTab({ finance, settings }) {
                   dot={false} activeDot={{ r: 4 }} name="Aktual" connectNulls={false} />
                 {estimatedBepDate && (
                   <Line type="monotone" dataKey="projected" stroke={C.amberDeep} strokeWidth={2}
-                    strokeDasharray="6 4" dot={false} activeDot={{ r: 4 }} name="Proyeksi" connectNulls={false} />
+                    strokeDasharray="6 5" dot={false} name="Proyeksi" connectNulls={false} />
                 )}
               </LineChart>
             </ResponsiveContainer>
@@ -1090,11 +1352,12 @@ function ProjectTab({ finance, settings }) {
         )}
       </SectionCard>
 
-      <SectionCard title="Cara membaca angka" description="Agar hasil BEP akurat, masukkan transaksi lama menggunakan tanggal transaksi sebenarnya.">
+      <SectionCard title="Cara membaca angka" description="Masukkan transaksi dengan tanggal sebenarnya agar BEP aktual dan proyeksi tetap konsisten.">
         <div className="text-sm leading-6" style={{ color: C.inkSoft }}>
-          Pengeluaran kategori <b>Pembuatan/renovasi kandang, Pembelian ayam, dan Peralatan</b> dianggap sebagai investasi/modal satu kali.
-          Pakan, obat, listrik/air, tenaga kerja, transportasi, perbaikan kandang, dan lainnya dianggap biaya operasional.
-          Estimasi hari-H BEP akan bergerak otomatis setiap ada transaksi baru.
+          Pengeluaran kategori <b>Pembuatan/renovasi kandang, Pembelian ayam, dan Peralatan</b> dianggap investasi/modal satu kali.
+          Pembelian stok pakan otomatis masuk Keuangan sebagai pengeluaran sehingga memengaruhi BEP aktual.
+          Pemakaian pakan tidak dibuat sebagai pengeluaran kedua; qty terpakai hanya dikonversi ke biaya pakan untuk menghitung profit operasional dan proyeksi BEP agar tidak terjadi double count.
+          Penjualan telur dicatat dari menu Produksi Telur dan otomatis menjadi pemasukan Keuangan.
         </div>
       </SectionCard>
     </div>
@@ -1117,25 +1380,29 @@ export default function OvanaFarmDashboard() {
   const [loadError, setLoadError] = useState(false);
   const [tab, setTab] = useState('eggs');
   const [settings, setSettings] = useState({ flockSize: 0, farmName: 'Ovana Farm', startDate: '' });
-  const [data, setData] = useState({ eggs: [], feed: [], feedStock: [], health: [], finance: [] });
+  const [data, setData] = useState({ eggs: [], eggSales: [], feed: [], feedStock: [], health: [], finance: [] });
 
   useEffect(() => {
     let mounted = true;
 
     (async () => {
       try {
-        const [eggResult, feedResult, feedStockResult, healthResult, financeResult, settingResult] = await Promise.all([
+        const [eggResult, eggSalesResult, feedResult, feedStockResult, healthResult, financeResult, settingResult] = await Promise.all([
           supabase
             .from('kandang_telur')
             .select('id, tanggal, grade_a, grade_b, retak')
             .order('tanggal', { ascending: true }),
           supabase
+            .from('kandang_penjualan_telur')
+            .select('id, tanggal, jumlah_butir, berat_kg, nominal, pembeli, catatan, keuangan_id')
+            .order('tanggal', { ascending: true }),
+          supabase
             .from('kandang_pakan')
-            .select('id, tanggal, jenis_pakan, pakan_kg, air_liter')
+            .select('id, tanggal, jenis_pakan, pakan_kg, air_liter, harga_per_kg, biaya_pakan')
             .order('tanggal', { ascending: true }),
           supabase
             .from('kandang_stok_pakan')
-            .select('id, tanggal, jenis_pakan, jumlah_kg, catatan')
+            .select('id, tanggal, jenis_pakan, jumlah_kg, harga_total, catatan')
             .order('tanggal', { ascending: true }),
           supabase
             .from('kandang_kesehatan')
@@ -1143,7 +1410,7 @@ export default function OvanaFarmDashboard() {
             .order('tanggal', { ascending: true }),
           supabase
             .from('kandang_keuangan')
-            .select('id, tanggal, jenis, kategori, nominal, catatan')
+            .select('id, tanggal, jenis, kategori, nominal, catatan, ref_stok_pakan')
             .order('tanggal', { ascending: true }),
           supabase
             .from('kandang_setting')
@@ -1152,6 +1419,7 @@ export default function OvanaFarmDashboard() {
         ]);
 
         if (eggResult.error) throw eggResult.error;
+        if (eggSalesResult.error) throw eggSalesResult.error;
         if (feedResult.error) throw feedResult.error;
         if (feedStockResult.error) throw feedStockResult.error;
         if (healthResult.error) throw healthResult.error;
@@ -1166,12 +1434,25 @@ export default function OvanaFarmDashboard() {
           broken: r.retak,
         }));
 
+        const eggSales = (eggSalesResult.data || []).map((r) => ({
+          id: r.id,
+          date: r.tanggal,
+          qty: Number(r.jumlah_butir),
+          weightKg: Number(r.berat_kg) || 0,
+          amount: Number(r.nominal),
+          buyer: r.pembeli || '',
+          notes: r.catatan || '',
+          financeId: r.keuangan_id || null,
+        }));
+
         const feed = (feedResult.data || []).map((r) => ({
           id: r.id,
           date: r.tanggal,
           feedType: r.jenis_pakan,
           feedKg: Number(r.pakan_kg),
           waterLiter: Number(r.air_liter),
+          unitCost: Number(r.harga_per_kg) || 0,
+          feedCost: Number(r.biaya_pakan) || 0,
         }));
 
         const feedStock = (feedStockResult.data || []).map((r) => ({
@@ -1179,6 +1460,7 @@ export default function OvanaFarmDashboard() {
           date: r.tanggal,
           feedType: r.jenis_pakan,
           stockKg: Number(r.jumlah_kg),
+          purchaseCost: Number(r.harga_total) || 0,
           notes: r.catatan || '',
         }));
 
@@ -1198,6 +1480,7 @@ export default function OvanaFarmDashboard() {
           category: r.kategori,
           amount: Number(r.nominal),
           notes: r.catatan || '',
+          refStockId: r.ref_stok_pakan || null,
         }));
 
         const farmSettings = settingResult.data
@@ -1210,7 +1493,7 @@ export default function OvanaFarmDashboard() {
 
         if (!mounted) return;
 
-        setData({ eggs, feed, feedStock, health, finance });
+        setData({ eggs, eggSales, feed, feedStock, health, finance });
         setSettings(farmSettings);
       } catch (e) {
         console.error('Gagal memuat data:', e);
@@ -1286,6 +1569,86 @@ export default function OvanaFarmDashboard() {
     }));
   };
 
+
+  const addEggSaleRecord = async (record) => {
+    const { data: inserted, error } = await supabase
+      .from('kandang_penjualan_telur')
+      .insert({
+        tanggal: record.date,
+        jumlah_butir: record.qty,
+        berat_kg: record.weightKg > 0 ? record.weightKg : null,
+        nominal: record.amount,
+        pembeli: record.buyer || null,
+        catatan: record.notes || null,
+      })
+      .select('id, tanggal, jumlah_butir, berat_kg, nominal, pembeli, catatan, keuangan_id')
+      .single();
+
+    if (error) {
+      console.error('Gagal menyimpan penjualan telur:', error);
+      alert('Gagal menyimpan penjualan telur.');
+      return;
+    }
+
+    const saleRecord = {
+      id: inserted.id,
+      date: inserted.tanggal,
+      qty: Number(inserted.jumlah_butir),
+      weightKg: Number(inserted.berat_kg) || 0,
+      amount: Number(inserted.nominal),
+      buyer: inserted.pembeli || '',
+      notes: inserted.catatan || '',
+      financeId: inserted.keuangan_id || null,
+    };
+
+    let financeRecord = null;
+    if (inserted.keuangan_id) {
+      const { data: financeInserted, error: financeError } = await supabase
+        .from('kandang_keuangan')
+        .select('id, tanggal, jenis, kategori, nominal, catatan')
+        .eq('id', inserted.keuangan_id)
+        .single();
+
+      if (!financeError && financeInserted) {
+        financeRecord = {
+          id: financeInserted.id,
+          date: financeInserted.tanggal,
+          type: financeInserted.jenis,
+          category: financeInserted.kategori,
+          amount: Number(financeInserted.nominal),
+          notes: financeInserted.catatan || '',
+        };
+      }
+    }
+
+    setData((prev) => ({
+      ...prev,
+      eggSales: [...prev.eggSales, saleRecord],
+      finance: financeRecord ? [...prev.finance, financeRecord] : prev.finance,
+    }));
+  };
+
+  const deleteEggSaleRecord = async (record) => {
+    const { error } = await supabase
+      .from('kandang_penjualan_telur')
+      .delete()
+      .eq('id', record.id);
+
+    if (error) {
+      console.error('Gagal menghapus penjualan telur:', error);
+      alert('Gagal menghapus penjualan telur.');
+      return;
+    }
+
+    setData((prev) => ({
+      ...prev,
+      eggSales: prev.eggSales.filter((r) => r.id !== record.id),
+      finance: record.financeId
+        ? prev.finance.filter((r) => r.id !== record.financeId)
+        : prev.finance,
+    }));
+  };
+
   const addFeedRecord = async (record) => {
     const { data: inserted, error } = await supabase
       .from('kandang_pakan')
@@ -1294,8 +1657,10 @@ export default function OvanaFarmDashboard() {
         jenis_pakan: record.feedType,
         pakan_kg: record.feedKg,
         air_liter: record.waterLiter,
+        harga_per_kg: record.unitCost,
+        biaya_pakan: record.feedCost,
       })
-      .select('id, tanggal, jenis_pakan, pakan_kg, air_liter')
+      .select('id, tanggal, jenis_pakan, pakan_kg, air_liter, harga_per_kg, biaya_pakan')
       .single();
 
     if (error) {
@@ -1310,6 +1675,8 @@ export default function OvanaFarmDashboard() {
       feedType: inserted.jenis_pakan,
       feedKg: Number(inserted.pakan_kg),
       waterLiter: Number(inserted.air_liter),
+      unitCost: Number(inserted.harga_per_kg) || 0,
+      feedCost: Number(inserted.biaya_pakan) || 0,
     };
 
     setData((prev) => ({
@@ -1337,15 +1704,14 @@ export default function OvanaFarmDashboard() {
   };
 
   const addFeedStockRecord = async (record) => {
-    const { data: inserted, error } = await supabase
-      .from('kandang_stok_pakan')
-      .insert({
-        tanggal: record.date,
-        jenis_pakan: record.feedType,
-        jumlah_kg: record.stockKg,
-        catatan: record.notes,
+    const { data: result, error } = await supabase
+      .rpc('kandang_tambah_stok_pakan', {
+        p_tanggal: record.date,
+        p_jenis_pakan: record.feedType,
+        p_jumlah_kg: record.stockKg,
+        p_harga_total: record.purchaseCost,
+        p_catatan: record.notes || null,
       })
-      .select('id, tanggal, jenis_pakan, jumlah_kg, catatan')
       .single();
 
     if (error) {
@@ -1354,17 +1720,35 @@ export default function OvanaFarmDashboard() {
       return;
     }
 
-    const newRecord = {
-      id: inserted.id,
-      date: inserted.tanggal,
-      feedType: inserted.jenis_pakan,
-      stockKg: Number(inserted.jumlah_kg),
-      notes: inserted.catatan || '',
+    const stockId = result.stock_id;
+    const financeId = result.finance_id;
+    const financeNotes = `Otomatis dari stok pakan: ${record.feedType} ${record.stockKg} kg`;
+
+    const newStock = {
+      id: stockId,
+      date: record.date,
+      feedType: record.feedType,
+      stockKg: Number(record.stockKg),
+      purchaseCost: Number(record.purchaseCost),
+      notes: record.notes || '',
     };
+
+    const newFinance = financeId
+      ? {
+          id: financeId,
+          date: record.date,
+          type: 'expense',
+          category: 'Pakan',
+          amount: Number(record.purchaseCost),
+          notes: financeNotes,
+          refStockId: stockId,
+        }
+      : null;
 
     setData((prev) => ({
       ...prev,
-      feedStock: [...prev.feedStock, newRecord],
+      feedStock: [...prev.feedStock, newStock],
+      finance: newFinance ? [...prev.finance, newFinance] : prev.finance,
     }));
   };
 
@@ -1383,6 +1767,7 @@ export default function OvanaFarmDashboard() {
     setData((prev) => ({
       ...prev,
       feedStock: prev.feedStock.filter((r) => r.id !== id),
+      finance: prev.finance.filter((r) => r.refStockId !== id),
     }));
   };
 
@@ -1534,7 +1919,10 @@ export default function OvanaFarmDashboard() {
     const deathsThisMonth = data.health.filter((r) => isThisMonth(r.date)).reduce((s, r) => s + (r.death || 0), 0);
     const balanceThisMonth = data.finance.filter((r) => isThisMonth(r.date))
       .reduce((s, r) => s + (r.type === 'income' ? r.amount : -r.amount), 0);
-    return { todayTotal, avg7, deathsThisMonth, balanceThisMonth };
+    const producedEggs = data.eggs.reduce((s, r) => s + (Number(r.gradeA) || 0) + (Number(r.gradeB) || 0), 0);
+    const soldEggs = data.eggSales.reduce((s, r) => s + (Number(r.qty) || 0), 0);
+    const eggStock = producedEggs - soldEggs;
+    return { todayTotal, avg7, deathsThisMonth, balanceThisMonth, eggStock };
   }, [data]);
 
   if (loading) {
@@ -1613,7 +2001,7 @@ export default function OvanaFarmDashboard() {
         {/* KPI strip */}
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 mt-6">
           <KpiCard icon={Egg} label="Telur hari ini" value={`${kpis.todayTotal} butir`}
-            sub={kpis.todayTotal === 0 ? 'Belum dicatat hari ini' : undefined} accent={C.amberDeep} />
+            sub={`Stok siap jual ${kpis.eggStock} butir`} accent={C.amberDeep} />
           <KpiCard icon={Droplets} label="Rata² 7 hari" value={`${kpis.avg7} butir/hari`} accent={C.sage} />
           <KpiCard icon={Skull} label="Kematian bulan ini" value={`${kpis.deathsThisMonth} ekor`} accent={C.rust} />
           <KpiCard icon={Wallet} label="Saldo bulan ini"
@@ -1652,8 +2040,11 @@ export default function OvanaFarmDashboard() {
         {tab === 'eggs' && (
           <EggsTab
             records={data.eggs}
+            salesRecords={data.eggSales}
             onAdd={addEggRecord}
             onDelete={deleteEggRecord}
+            onAddSale={addEggSaleRecord}
+            onDeleteSale={deleteEggSaleRecord}
             flockSize={settings.flockSize}
           />
         )}
@@ -1682,7 +2073,7 @@ export default function OvanaFarmDashboard() {
           />
         )}
         {tab === 'project' && (
-          <ProjectTab finance={data.finance} settings={settings} />
+          <ProjectTab finance={data.finance} settings={settings} eggs={data.eggs} eggSales={data.eggSales} feed={data.feed} />
         )}
       </div>
     </div>
