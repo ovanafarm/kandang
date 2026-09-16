@@ -306,64 +306,317 @@ function EggsTab({ records, onAdd, onDelete, flockSize }) {
 /* ---------------------------------------------------------------
    Tab: Pakan & Minum
 ------------------------------------------------------------------*/
-function FeedTab({ records, onAdd, onDelete }) {
-  const [form, setForm] = useState({ date: todayISO(), feedKg: '', feedType: 'Konsentrat', waterLiter: '' });
-  const sorted = useMemo(() => [...records].sort((a, b) => b.date.localeCompare(a.date)), [records]);
+function FeedTab({
+  records,
+  stockRecords,
+  onAdd,
+  onDelete,
+  onAddStock,
+  onDeleteStock,
+}) {
+  const FEED_TYPES = ['Konsentrat', 'Jagung giling', 'Dedak', 'Campuran', 'Lainnya'];
+
+  const [form, setForm] = useState({
+    date: todayISO(),
+    feedKg: '',
+    feedType: 'Konsentrat',
+    waterLiter: '',
+  });
+
+  const [stockForm, setStockForm] = useState({
+    date: todayISO(),
+    feedType: 'Konsentrat',
+    stockKg: '',
+    notes: '',
+  });
+
+  const sorted = useMemo(
+    () => [...records].sort((a, b) => b.date.localeCompare(a.date)),
+    [records]
+  );
+
+  const sortedStock = useMemo(
+    () => [...stockRecords].sort((a, b) => b.date.localeCompare(a.date)),
+    [stockRecords]
+  );
+
   const chartData = useMemo(
-    () => [...records].sort((a, b) => a.date.localeCompare(b.date)).slice(-14)
+    () => [...records]
+      .sort((a, b) => a.date.localeCompare(b.date))
+      .slice(-14)
       .map((r) => ({ date: r.date.slice(5), pakan: r.feedKg })),
     [records]
   );
+
+  const stockSummary = useMemo(() => {
+    return FEED_TYPES.map((type) => {
+      const incoming = stockRecords
+        .filter((r) => r.feedType === type)
+        .reduce((sum, r) => sum + (Number(r.stockKg) || 0), 0);
+
+      const used = records
+        .filter((r) => r.feedType === type)
+        .reduce((sum, r) => sum + (Number(r.feedKg) || 0), 0);
+
+      const stock = incoming - used;
+
+      const recentRows = records
+        .filter((r) => r.feedType === type)
+        .sort((a, b) => b.date.localeCompare(a.date))
+        .slice(0, 14);
+
+      const recentByDate = {};
+      recentRows.forEach((r) => {
+        recentByDate[r.date] = (recentByDate[r.date] || 0) + (Number(r.feedKg) || 0);
+      });
+
+      const dailyValues = Object.values(recentByDate);
+      const avgDaily = dailyValues.length
+        ? dailyValues.reduce((sum, n) => sum + n, 0) / dailyValues.length
+        : 0;
+
+      const daysLeft = avgDaily > 0 && stock > 0
+        ? Math.floor(stock / avgDaily)
+        : null;
+
+      return { type, incoming, used, stock, avgDaily, daysLeft };
+    }).filter((x) => x.incoming > 0 || x.used > 0);
+  }, [records, stockRecords]);
 
   const submit = (e) => {
     e.preventDefault();
     const feedKg = Number(form.feedKg) || 0;
     const waterLiter = Number(form.waterLiter) || 0;
     if (feedKg <= 0 && waterLiter <= 0) return;
-    onAdd({ id: uid(), date: form.date, feedKg, feedType: form.feedType, waterLiter });
+
+    const selectedStock = stockSummary.find((x) => x.type === form.feedType);
+    if (feedKg > 0 && selectedStock && selectedStock.stock < feedKg) {
+      const ok = window.confirm(
+        `Stok ${form.feedType} hanya ${selectedStock.stock.toFixed(1)} kg, tetapi pemakaian yang dimasukkan ${feedKg} kg. Tetap simpan?`
+      );
+      if (!ok) return;
+    }
+
+    onAdd({
+      id: uid(),
+      date: form.date,
+      feedKg,
+      feedType: form.feedType,
+      waterLiter,
+    });
+
     setForm({ ...form, feedKg: '', waterLiter: '' });
+  };
+
+  const submitStock = (e) => {
+    e.preventDefault();
+    const stockKg = Number(stockForm.stockKg) || 0;
+    if (stockKg <= 0) return;
+
+    onAddStock({
+      id: uid(),
+      date: stockForm.date,
+      feedType: stockForm.feedType,
+      stockKg,
+      notes: stockForm.notes.trim(),
+    });
+
+    setStockForm({ ...stockForm, stockKg: '', notes: '' });
   };
 
   return (
     <div className="flex flex-col gap-6">
-      <SectionCard title="Catat pakan & minum" description="Input konsumsi pakan dan air hari ini.">
-        <form onSubmit={submit} className="flex flex-wrap gap-3 items-end">
-          <Field label="Tanggal">
-            <TextInput type="date" value={form.date} max={todayISO()}
-              onChange={(e) => setForm({ ...form, date: e.target.value })} />
+      <SectionCard
+        title="Stok pakan"
+        description="Stok tersedia dihitung otomatis dari stok masuk dikurangi pemakaian harian."
+      >
+        {stockSummary.length === 0 ? (
+          <EmptyRow text="Belum ada stok pakan. Tambahkan stok masuk terlebih dahulu." />
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {stockSummary.map((s) => {
+              const lowStock = s.daysLeft !== null && s.daysLeft <= 3;
+              return (
+                <div
+                  key={s.type}
+                  className="rounded-xl p-4"
+                  style={{
+                    background: C.panelAlt,
+                    border: `1px solid ${lowStock ? C.rust : C.border}`,
+                  }}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-semibold" style={{ color: C.ink }}>
+                        {s.type}
+                      </div>
+                      <div
+                        style={{
+                          fontFamily: FONT_HEAD,
+                          fontSize: 28,
+                          fontWeight: 600,
+                          color: s.stock <= 0 ? C.rust : C.green,
+                        }}
+                      >
+                        {s.stock.toLocaleString('id-ID', { maximumFractionDigits: 1 })} kg
+                      </div>
+                    </div>
+                    <Wheat size={22} color={lowStock ? C.rust : C.sage} />
+                  </div>
+
+                  <div className="text-xs mt-2" style={{ color: C.inkSoft }}>
+                    Masuk {s.incoming.toLocaleString('id-ID', { maximumFractionDigits: 1 })} kg
+                    {' · '}
+                    Terpakai {s.used.toLocaleString('id-ID', { maximumFractionDigits: 1 })} kg
+                  </div>
+
+                  <div className="text-xs mt-1" style={{ color: lowStock ? C.rust : C.inkSoft }}>
+                    {s.avgDaily > 0
+                      ? `Rata-rata ${s.avgDaily.toLocaleString('id-ID', { maximumFractionDigits: 1 })} kg/hari`
+                      : 'Belum ada rata-rata pemakaian'}
+                    {s.daysLeft !== null ? ` · estimasi ${s.daysLeft} hari lagi` : ''}
+                  </div>
+
+                  {lowStock && (
+                    <div className="text-xs font-semibold mt-2" style={{ color: C.rust }}>
+                      ⚠ Stok pakan menipis
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </SectionCard>
+
+      <SectionCard
+        title="Tambah stok pakan"
+        description="Catat setiap pakan yang baru dibeli atau masuk ke gudang."
+      >
+        <form onSubmit={submitStock} className="flex flex-wrap gap-3 items-end">
+          <Field label="Tanggal masuk">
+            <TextInput
+              type="date"
+              value={stockForm.date}
+              max={todayISO()}
+              onChange={(e) => setStockForm({ ...stockForm, date: e.target.value })}
+            />
           </Field>
+
           <Field label="Jenis pakan">
-            <Select value={form.feedType} onChange={(e) => setForm({ ...form, feedType: e.target.value })}>
-              <option>Konsentrat</option>
-              <option>Jagung giling</option>
-              <option>Dedak</option>
-              <option>Campuran</option>
-              <option>Lainnya</option>
+            <Select
+              value={stockForm.feedType}
+              onChange={(e) => setStockForm({ ...stockForm, feedType: e.target.value })}
+            >
+              {FEED_TYPES.map((type) => <option key={type}>{type}</option>)}
             </Select>
           </Field>
-          <Field label="Pakan (kg)">
-            <TextInput type="number" min="0" step="0.1" placeholder="0" value={form.feedKg}
-              onChange={(e) => setForm({ ...form, feedKg: e.target.value })} style={{ width: 110 }} />
+
+          <Field label="Stok masuk (kg)">
+            <TextInput
+              type="number"
+              min="0"
+              step="0.1"
+              placeholder="0"
+              value={stockForm.stockKg}
+              onChange={(e) => setStockForm({ ...stockForm, stockKg: e.target.value })}
+              style={{ width: 130 }}
+            />
           </Field>
-          <Field label="Air minum (liter)">
-            <TextInput type="number" min="0" step="0.1" placeholder="0" value={form.waterLiter}
-              onChange={(e) => setForm({ ...form, waterLiter: e.target.value })} style={{ width: 130 }} />
+
+          <Field label="Catatan">
+            <TextInput
+              type="text"
+              placeholder="mis. beli 2 karung"
+              value={stockForm.notes}
+              onChange={(e) => setStockForm({ ...stockForm, notes: e.target.value })}
+              style={{ width: 200 }}
+            />
           </Field>
-          <button type="submit" className="h-[38px] rounded-lg px-4 flex items-center gap-1.5 text-sm font-medium"
-            style={{ background: C.sage, color: '#fff' }}>
-            <Plus size={16} /> Tambah
+
+          <button
+            type="submit"
+            className="h-[38px] rounded-lg px-4 flex items-center gap-1.5 text-sm font-medium"
+            style={{ background: C.green, color: '#fff' }}
+          >
+            <Plus size={16} /> Tambah stok
           </button>
         </form>
       </SectionCard>
 
-      <SectionCard title="Konsumsi pakan (14 hari terakhir)">
-        {chartData.length === 0 ? <EmptyRow text="Belum ada data pakan." /> : (
+      <SectionCard title="Catat pakan & minum" description="Input konsumsi pakan dan air hari ini.">
+        <form onSubmit={submit} className="flex flex-wrap gap-3 items-end">
+          <Field label="Tanggal">
+            <TextInput
+              type="date"
+              value={form.date}
+              max={todayISO()}
+              onChange={(e) => setForm({ ...form, date: e.target.value })}
+            />
+          </Field>
+
+          <Field label="Jenis pakan">
+            <Select
+              value={form.feedType}
+              onChange={(e) => setForm({ ...form, feedType: e.target.value })}
+            >
+              {FEED_TYPES.map((type) => <option key={type}>{type}</option>)}
+            </Select>
+          </Field>
+
+          <Field label="Pakan (kg)">
+            <TextInput
+              type="number"
+              min="0"
+              step="0.1"
+              placeholder="0"
+              value={form.feedKg}
+              onChange={(e) => setForm({ ...form, feedKg: e.target.value })}
+              style={{ width: 110 }}
+            />
+          </Field>
+
+          <Field label="Air minum (liter)">
+            <TextInput
+              type="number"
+              min="0"
+              step="0.1"
+              placeholder="0"
+              value={form.waterLiter}
+              onChange={(e) => setForm({ ...form, waterLiter: e.target.value })}
+              style={{ width: 130 }}
+            />
+          </Field>
+
+          <button
+            type="submit"
+            className="h-[38px] rounded-lg px-4 flex items-center gap-1.5 text-sm font-medium"
+            style={{ background: C.sage, color: '#fff' }}
+          >
+            <Plus size={16} /> Tambah pemakaian
+          </button>
+        </form>
+      </SectionCard>
+
+      <SectionCard title="Konsumsi pakan (14 catatan terakhir)">
+        {chartData.length === 0 ? (
+          <EmptyRow text="Belum ada data pakan." />
+        ) : (
           <div style={{ height: 220 }}>
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={chartData} margin={{ left: -20, right: 10 }}>
                 <CartesianGrid stroke={C.border} vertical={false} />
-                <XAxis dataKey="date" tick={{ fontSize: 11, fill: C.inkSoft }} axisLine={{ stroke: C.border }} tickLine={false} />
-                <YAxis tick={{ fontSize: 11, fill: C.inkSoft }} axisLine={false} tickLine={false} />
+                <XAxis
+                  dataKey="date"
+                  tick={{ fontSize: 11, fill: C.inkSoft }}
+                  axisLine={{ stroke: C.border }}
+                  tickLine={false}
+                />
+                <YAxis
+                  tick={{ fontSize: 11, fill: C.inkSoft }}
+                  axisLine={false}
+                  tickLine={false}
+                />
                 <Tooltip contentStyle={chartTooltipStyle} labelStyle={{ color: '#fff' }} />
                 <Bar dataKey="pakan" fill={C.sage} radius={[4, 4, 0, 0]} name="Pakan (kg)" />
               </BarChart>
@@ -372,12 +625,45 @@ function FeedTab({ records, onAdd, onDelete }) {
         )}
       </SectionCard>
 
-      <SectionCard title="Riwayat">
-        {sorted.length === 0 ? <EmptyRow text="Belum ada catatan." /> : (
+      <SectionCard title="Riwayat stok masuk">
+        {sortedStock.length === 0 ? (
+          <EmptyRow text="Belum ada stok masuk." />
+        ) : (
+          <div className="flex flex-col divide-y" style={{ borderColor: C.border }}>
+            {sortedStock.map((r) => (
+              <div
+                key={r.id}
+                className="flex items-center justify-between py-2.5 gap-3 flex-wrap"
+                style={{ borderColor: C.border }}
+              >
+                <div className="text-sm font-medium" style={{ minWidth: 100 }}>
+                  {fmtDate(r.date)}
+                </div>
+                <div className="text-sm flex-1" style={{ color: C.inkSoft }}>
+                  {r.feedType} · +{r.stockKg} kg
+                  {r.notes ? ` · ${r.notes}` : ''}
+                </div>
+                <DeleteBtn onClick={() => onDeleteStock(r.id)} />
+              </div>
+            ))}
+          </div>
+        )}
+      </SectionCard>
+
+      <SectionCard title="Riwayat pemakaian">
+        {sorted.length === 0 ? (
+          <EmptyRow text="Belum ada catatan." />
+        ) : (
           <div className="flex flex-col divide-y" style={{ borderColor: C.border }}>
             {sorted.map((r) => (
-              <div key={r.id} className="flex items-center justify-between py-2.5 gap-3 flex-wrap" style={{ borderColor: C.border }}>
-                <div className="text-sm font-medium" style={{ minWidth: 100 }}>{fmtDate(r.date)}</div>
+              <div
+                key={r.id}
+                className="flex items-center justify-between py-2.5 gap-3 flex-wrap"
+                style={{ borderColor: C.border }}
+              >
+                <div className="text-sm font-medium" style={{ minWidth: 100 }}>
+                  {fmtDate(r.date)}
+                </div>
                 <div className="text-sm flex-1" style={{ color: C.inkSoft }}>
                   {r.feedType} · {r.feedKg} kg pakan
                   {r.waterLiter ? ` · ${r.waterLiter} L air` : ''}
@@ -831,14 +1117,14 @@ export default function OvanaFarmDashboard() {
   const [loadError, setLoadError] = useState(false);
   const [tab, setTab] = useState('eggs');
   const [settings, setSettings] = useState({ flockSize: 0, farmName: 'Ovana Farm', startDate: '' });
-  const [data, setData] = useState({ eggs: [], feed: [], health: [], finance: [] });
+  const [data, setData] = useState({ eggs: [], feed: [], feedStock: [], health: [], finance: [] });
 
   useEffect(() => {
     let mounted = true;
 
     (async () => {
       try {
-        const [eggResult, feedResult, healthResult, financeResult, settingResult] = await Promise.all([
+        const [eggResult, feedResult, feedStockResult, healthResult, financeResult, settingResult] = await Promise.all([
           supabase
             .from('kandang_telur')
             .select('id, tanggal, grade_a, grade_b, retak')
@@ -846,6 +1132,10 @@ export default function OvanaFarmDashboard() {
           supabase
             .from('kandang_pakan')
             .select('id, tanggal, jenis_pakan, pakan_kg, air_liter')
+            .order('tanggal', { ascending: true }),
+          supabase
+            .from('kandang_stok_pakan')
+            .select('id, tanggal, jenis_pakan, jumlah_kg, catatan')
             .order('tanggal', { ascending: true }),
           supabase
             .from('kandang_kesehatan')
@@ -863,6 +1153,7 @@ export default function OvanaFarmDashboard() {
 
         if (eggResult.error) throw eggResult.error;
         if (feedResult.error) throw feedResult.error;
+        if (feedStockResult.error) throw feedStockResult.error;
         if (healthResult.error) throw healthResult.error;
         if (financeResult.error) throw financeResult.error;
         if (settingResult.error) throw settingResult.error;
@@ -881,6 +1172,14 @@ export default function OvanaFarmDashboard() {
           feedType: r.jenis_pakan,
           feedKg: Number(r.pakan_kg),
           waterLiter: Number(r.air_liter),
+        }));
+
+        const feedStock = (feedStockResult.data || []).map((r) => ({
+          id: r.id,
+          date: r.tanggal,
+          feedType: r.jenis_pakan,
+          stockKg: Number(r.jumlah_kg),
+          notes: r.catatan || '',
         }));
 
         const health = (healthResult.data || []).map((r) => ({
@@ -911,7 +1210,7 @@ export default function OvanaFarmDashboard() {
 
         if (!mounted) return;
 
-        setData({ eggs, feed, health, finance });
+        setData({ eggs, feed, feedStock, health, finance });
         setSettings(farmSettings);
       } catch (e) {
         console.error('Gagal memuat data:', e);
@@ -1034,6 +1333,56 @@ export default function OvanaFarmDashboard() {
     setData((prev) => ({
       ...prev,
       feed: prev.feed.filter((r) => r.id !== id),
+    }));
+  };
+
+  const addFeedStockRecord = async (record) => {
+    const { data: inserted, error } = await supabase
+      .from('kandang_stok_pakan')
+      .insert({
+        tanggal: record.date,
+        jenis_pakan: record.feedType,
+        jumlah_kg: record.stockKg,
+        catatan: record.notes,
+      })
+      .select('id, tanggal, jenis_pakan, jumlah_kg, catatan')
+      .single();
+
+    if (error) {
+      console.error('Gagal menyimpan stok pakan:', error);
+      alert('Gagal menyimpan stok pakan.');
+      return;
+    }
+
+    const newRecord = {
+      id: inserted.id,
+      date: inserted.tanggal,
+      feedType: inserted.jenis_pakan,
+      stockKg: Number(inserted.jumlah_kg),
+      notes: inserted.catatan || '',
+    };
+
+    setData((prev) => ({
+      ...prev,
+      feedStock: [...prev.feedStock, newRecord],
+    }));
+  };
+
+  const deleteFeedStockRecord = async (id) => {
+    const { error } = await supabase
+      .from('kandang_stok_pakan')
+      .delete()
+      .eq('id', id);
+
+    if (error) {
+      console.error('Gagal menghapus stok pakan:', error);
+      alert('Gagal menghapus stok pakan.');
+      return;
+    }
+
+    setData((prev) => ({
+      ...prev,
+      feedStock: prev.feedStock.filter((r) => r.id !== id),
     }));
   };
 
@@ -1301,8 +1650,11 @@ export default function OvanaFarmDashboard() {
         {tab === 'feed' && (
           <FeedTab
             records={data.feed}
+            stockRecords={data.feedStock}
             onAdd={addFeedRecord}
             onDelete={deleteFeedRecord}
+            onAddStock={addFeedStockRecord}
+            onDeleteStock={deleteFeedStockRecord}
           />
         )}
         {tab === 'health' && (
