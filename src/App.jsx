@@ -3294,8 +3294,29 @@ export default function OvanaFarmDashboard() {
               <div style={{ fontFamily: FONT_HEAD, fontSize: 26, fontWeight: 600, color: '#fff' }}>
                 {settings.farmName}
               </div>
-              <div className="text-xs font-semibold" style={{ color: C.ink }}>
-                Dashboard monitoring kandang ayam petelur
+              <div
+                className="text-xs"
+                style={{
+                  color: C.ink,
+                  fontStyle: 'italic',
+                  fontWeight: 500,
+                  letterSpacing: '0.01em',
+                  marginTop: 1,
+                }}
+              >
+                When Fresh Meets Daily Needs
+              </div>
+              <div
+                style={{
+                  color: C.ink,
+                  fontSize: 10,
+                  fontWeight: 500,
+                  opacity: 0.7,
+                  marginTop: 2,
+                  letterSpacing: '0.02em',
+                }}
+              >
+                by Tengah Sawah Squad
               </div>
             </div>
           </div>
